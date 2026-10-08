@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "component": "retroarch",
+  "version": "1.22.2",
+  "channel": "experimental",
+  "status": "awaiting-crt-validation",
+  "target": {
+    "platform": "RGB-Pi OS4 Final 27",
+    "architecture": "aarch64",
+    "cpu": "cortex-a72",
+    "userspace": "Debian Bullseye archive",
+    "video": "KMS+EGL+OpenGL ES",
+    "audio": "ALSA",
+    "input": "udev"
+  },
+  "build": {
+    "commit": "d1433d63be8f0a59e305bd96f10c53a1338975ed",
+    "workflow_run_id": 37843456284,
+    "release_tag": "retroarch-1.22.2-experimental",
+    "tarball": "retroarch-rgbpi-1.22.2-experimental.tar.gz",
+    "tarball_sha256": "e890287b0afb8226e704c36de93b727112cb54648e88cbf66a48a357425ebba4",
+    "binary_sha256": "16c0c0b95c4182f8c91ca0776954747f98c62078c9c5c0fb91e2d099f5d1e90e",
+    "max_required_glibc": "GLIBC_2.30"
+  },
+  "validation": {
+    "build": "passed",
+    "ci": "passed",
+    "crt": "pending",
+    "stable_manifest_promoted": false
+  }
+}
