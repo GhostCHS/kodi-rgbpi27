@@ -20,7 +20,6 @@ TIMINGS_SCRIPT = DATA_DIR / "update_timings.sh"
 PREFLIGHT_SCRIPT = DATA_DIR / "preflight.sh"
 BOOTSTRAP_SCRIPT = DATA_DIR / "bootstrap_local_metadata.sh"
 CRT_GUARD_SCRIPT = DATA_DIR / "crt_guard.sh"
-BASELINE_SCRIPT = DATA_DIR / "capture_crt_baseline.sh"
 
 KODI_LOG = Path("/var/log/kodi-updater/latest.log")
 RETROARCH_LOG = Path("/var/log/retroarch-updater/latest.log")
@@ -316,7 +315,6 @@ class MenuApp:
                 MenuEntry(f"GUI root: {'READY' if root_access_ready() else 'OFF'}"),
                 MenuEntry("Run Preflight", self.open_preflight, "action"),
                 MenuEntry("Run CRT Check", self.open_crt_check, "action"),
-                MenuEntry("Capture CRT Baseline", self.capture_crt_baseline, "action"),
                 MenuEntry("Bootstrap Metadata", lambda: self.run_system_action(BOOTSTRAP_SCRIPT, "Metadata refreshed"), "action"),
                 MenuEntry("View Bootstrap log", lambda: self.open_log("Bootstrap Log", BOOTSTRAP_LOG), "action"),
                 MenuEntry("Back", lambda: self.open_state("main"), "action"),
@@ -386,17 +384,6 @@ class MenuApp:
         self.index = max(0, len(self.log_lines))
         return 0
 
-    def capture_crt_baseline(self) -> int:
-        rc = self.run_command_with_progress(
-            ["env", *_runtime_env_args(), "bash", str(BASELINE_SCRIPT)],
-            title="PLEASE WAIT",
-            status="Capturing CRT baseline",
-            step_index=0,
-            step_total=1,
-        )
-        self.set_notice("CRT baseline captured" if rc == 0 else f"Baseline failed ({rc})", 3.0)
-        return rc
-
     def run_and_refresh(self, script: Path) -> int:
         rc = self.run_with_progress(script, "Running update...")
         self.refresh()
@@ -416,29 +403,17 @@ class MenuApp:
         return pending
 
     def run_update_all(self) -> int:
-        self.refresh()
-        pending = self.all_pending_updates()
-
-        if not pending:
-            self.set_notice("Everything is up to date", 3.0)
-            return 0
-
         if not root_access_ready():
             self.set_notice("Root required for UPDATE EVERYTHING", 4.0)
             return 77
 
         steps: list[tuple[str, list[str]]] = [
-            ("CRT baseline", ["env", *_runtime_env_args(), "bash", str(BASELINE_SCRIPT)]),
+            ("Kodi", sudo_script_command(KODI_SCRIPT, "--update")),
+            ("RetroArch", sudo_script_command(RETROARCH_SCRIPT, "--update")),
+            ("Cores", sudo_script_command(CORES_SCRIPT, "--update")),
+            ("CRT Timings", sudo_script_command(TIMINGS_SCRIPT, "--update")),
+            ("CRT verification", ["env", *_runtime_env_args(), "bash", str(CRT_GUARD_SCRIPT), "--strict"]),
         ]
-        if self.kodi.update_available:
-            steps.append(("Kodi", sudo_script_command(KODI_SCRIPT, "--update")))
-        if self.retroarch.update_available:
-            steps.append(("RetroArch", sudo_script_command(RETROARCH_SCRIPT, "--update")))
-        if self.cores.update_available:
-            steps.append(("Cores", sudo_script_command(CORES_SCRIPT, "--update")))
-        if self.timings.update_available:
-            steps.append(("CRT Timings", sudo_script_command(TIMINGS_SCRIPT, "--update")))
-        steps.append(("CRT verification", ["env", *_runtime_env_args(), "bash", str(CRT_GUARD_SCRIPT), "--status"]))
 
         rc = self.run_commands_with_progress(steps, UPDATE_ALL_LOG)
         self.refresh()
