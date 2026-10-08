@@ -1,145 +1,155 @@
-# kodi-rgbpi
+# RGB-Pi 27 Updater
 
-Clean public updater repo for RGB-Pi.
+A maintained fork of `joeblack2k/kodi-rgbpi` for **RGB-Pi OS4 Final 27** on Raspberry Pi 4 / Pi 400.
 
-This repo is intentionally small:
-- `update.sh`
-- `data/`
-- `manifest.json`
+The goal is not to turn OS4 into a rolling Debian installation. RGB-Pi depends on a tightly coupled CRT/DPI video stack, so this updater modernizes user-space components while deliberately leaving the OS4 kernel, firmware and base distribution alone.
 
-Do not launch the individual files in `data/` directly.
-`update.sh` is the only real entrypoint.
+## Current policy
 
-Current release note:
-- the bundled `kodi.deb` is the RGB-Pi Pi4 `GBM + GLES + ALSA` build with `SMB` and `NFS` enabled
+**Stable = current enough, but CRT-tested first.**
 
-## What `update.sh` Does
+As of 2026-10-08:
 
-- launches the RGB-Pi updater menu
-- updates Kodi
-- updates RetroArch
-- updates the core bundle
-- updates `timings.dat`
-- shows a live 0-100 progress bar while updates run
-- automatically enables passwordless sudo for `pi` on first run
-- bootstraps the missing `data/` runtime from GitHub when only `update.sh` was copied
+| Component | Upstream stable | RGB-Pi 27 stable channel |
+|---|---:|---:|
+| Kodi | 21.3 Omega | 21.3 RGB-Pi build |
+| RetroArch | 1.22.2 | 1.22.0-rgbpi1 until 1.22.2 passes CRT validation |
+| Cores | rolling | validated bundle |
+| timings.dat | RGB-Pi-specific | validated OS4 bundle |
 
-## Install On RGB-Pi
+The manifest records both the validated package and known upstream version. A newer upstream number is **not** promoted automatically if it could break 15-kHz output, DynaRes, controller input or OS4 launch integration.
 
-Preferred install:
+## What this fork changes
 
-Download `RGB-PI Updater.zip` from GitHub Releases and extract it directly into the RGB-Pi ports directory.
+- Targets this repository (`GhostCHS/kodi-rgbpi27`) for runtime updates.
+- Adds an OS4 / architecture / Raspberry Pi preflight check.
+- Allows version/status checks without root.
+- Removes the old automatic password guessing.
+- Removes automatic creation of `pi ALL=(ALL) NOPASSWD:ALL`.
+- Validates the manifest before using it.
+- Keeps SHA-256 validation for downloadable payloads.
+- Keeps timestamped rollback backups before component replacement.
+- Explicitly refuses to manage the OS4 kernel, Raspberry Pi firmware or a full distribution upgrade.
 
-On the current OS4 image we tested, that directory is:
+## Components
 
-```bash
-mkdir -p "/media/sd/roms/ports"
-```
+The updater manages only:
 
-After extraction, the updater should live here:
+- Kodi
+- Kodi joystick addon
+- RetroArch frontend
+- managed libretro core bundle
+- RGB-Pi `timings.dat`
 
-```text
-/media/sd/roms/ports/RGB-PI Updater/
-```
-
-This release zip is intended to be fully self-contained:
-- `update.sh`
-- `data/`
-- `manifest.json`
-- `kodi.deb`
-- `kodi-omega-peripheral-joystick.tar.gz`
-- `retroarch-rgbpi.tar.gz`
-- `cores.tar.gz`
-- `timings.dat`
-
-That means the Pi does not need internet access just to run the updater.
-It also means the included Kodi package and its required bundled runtime files stay in sync with the manifest inside the zip.
-
-Manual install from the repo is still possible if needed.
-
-If you already cloned this repo on the Pi:
-
-```bash
-mkdir -p "/media/sd/roms/ports/RGB-PI Updater"
-cp "update.sh" "/media/sd/roms/ports/RGB-PI Updater/update.sh"
-chmod +x "/media/sd/roms/ports/RGB-PI Updater/update.sh"
-```
-
-If you want to pull the minimal entrypoint straight from GitHub:
-
-```bash
-mkdir -p "/media/sd/roms/ports/RGB-PI Updater"
-curl -fsSL "https://raw.githubusercontent.com/joeblack2k/kodi-rgbpi/main/update.sh" -o "/media/sd/roms/ports/RGB-PI Updater/update.sh"
-chmod +x "/media/sd/roms/ports/RGB-PI Updater/update.sh"
-```
-
-Minimal manual install still bootstraps the runtime from GitHub on first launch.
-
-On a clean RGB-Pi OS4 image, the first launch also enables passwordless sudo for `pi`, tells you to reboot, and exits there on purpose.
-After that reboot, launch the updater again and do the actual updates.
-
-The automatic first-run sudo bootstrap assumes the stock `pi` password is `rgbpi`.
-If you changed that password before first launch, run this once manually instead:
-
-```bash
-sudo bash "/media/sd/roms/ports/RGB-PI Updater/update.sh" root
-```
-
-## Optional Bundled Install
-
-If you want the updater to run without downloading runtime files on first launch, also copy:
-
-- `data/`
-- `manifest.json`
-
-If you want fully local payloads for update installs, download the latest release assets and place them in:
+It intentionally does **not** run:
 
 ```text
-/media/sd/roms/ports/RGB-PI Updater/data/
+apt full-upgrade
+rpi-update
+firmware upgrades
+kernel replacement
 ```
 
-Supported local payload files:
+## Installation
 
-- `kodi.deb`
-- `kodi-omega-peripheral-joystick.tar.gz`
-- `retroarch-rgbpi.tar.gz`
-- `cores.tar.gz`
-- `timings.dat`
+Place the updater under the RGB-Pi Ports directory:
 
-When those files are present locally, `update.sh` and the component scripts use them instead of downloading them from the release URLs in `manifest.json`.
+```bash
+mkdir -p "/media/sd/roms/ports/RGB-PI 27 Updater"
 
-## Run
+curl -fsSL \
+  "https://raw.githubusercontent.com/GhostCHS/kodi-rgbpi27/main/update.sh" \
+  -o "/media/sd/roms/ports/RGB-PI 27 Updater/update.sh"
 
-From the RGB-Pi menu, launch:
+chmod +x "/media/sd/roms/ports/RGB-PI 27 Updater/update.sh"
+```
+
+Then rescan games in the RGB-Pi UI and launch it from **Ports**.
+
+The minimal launcher downloads the current text runtime from this repository on first start.
+
+## Preflight
+
+From SSH:
+
+```bash
+"/media/sd/roms/ports/RGB-PI 27 Updater/update.sh" preflight
+```
+
+Typical Final 27 output should show:
 
 ```text
-/media/sd/roms/ports/RGB-PI Updater/
+ARCH=aarch64
+RGBPI_UI=YES
+RETROARCH=YES
+TIMINGS=YES
 ```
 
-Or from shell:
+The primary tested target is Raspberry Pi 4 / Pi 400 running the Bullseye-based RGB-Pi OS4 Final 27 image.
+
+## Root access
+
+Reading status does not require root. Installing Kodi, RetroArch, cores or timings does.
+
+RGB-Pi OS4 Final 27 can intentionally ship the `pi` account with a very restricted sudo policy. This fork does not silently weaken that policy.
+
+See [docs/ROOT-ACCESS.md](docs/ROOT-ACCESS.md) before enabling update privileges.
+
+## Command line
 
 ```bash
-"/media/sd/roms/ports/RGB-PI Updater/update.sh"
+./update.sh
+./update.sh preflight
+./update.sh --dump-status
+
+./update.sh kodi --status
+./update.sh retroarch --status
+./update.sh cores --status
+./update.sh timings --status
+
+./update.sh kodi --update
+./update.sh retroarch --update
+./update.sh cores --update
+./update.sh timings --update
 ```
 
-Inside the RetroArch page in the menu, the updater now exposes one `Update All` action.
-That single action runs the managed RetroArch frontend, core bundle, and `timings.dat` updates in sequence and writes a combined log.
+Update actions require working root privileges.
 
-Useful direct commands:
+## RetroArch 1.22.2
 
-```bash
-"/media/sd/roms/ports/RGB-PI Updater/update.sh" kodi --status
-"/media/sd/roms/ports/RGB-PI Updater/update.sh" kodi --update
-"/media/sd/roms/ports/RGB-PI Updater/update.sh" retroarch --update
-"/media/sd/roms/ports/RGB-PI Updater/update.sh" cores --update
-"/media/sd/roms/ports/RGB-PI Updater/update.sh" timings --update
-"/media/sd/roms/ports/RGB-PI Updater/update.sh" root
-"/media/sd/roms/ports/RGB-PI Updater/update.sh" bootstrap
-"/media/sd/roms/ports/RGB-PI Updater/update.sh" --dump-status
+RetroArch 1.22.2 is the current upstream stable version, but a generic Linux ARM64 binary is **not** automatically safe for RGB-Pi OS4. The RGB-Pi frontend, native video driver and CRT timing behavior must be validated on real 15-kHz hardware.
+
+For that reason the stable manifest currently keeps the known RGB-Pi build until the 1.22.2 build has been tested for:
+
+- 240p / 288p mode generation
+- PAL 50 Hz and NTSC ~60 Hz
+- DynaRes / per-game timing changes
+- menu return and launch scripts
+- audio synchronization
+- controller hotplug
+- representative NES, SNES, Mega Drive, PS1, arcade and N64 titles
+
+See [docs/RELEASE-POLICY.md](docs/RELEASE-POLICY.md).
+
+## Rollback
+
+The component scripts create backups below:
+
+```text
+/opt/backups/agents/kodi/
+/opt/backups/agents/retroarch/
+/opt/backups/agents/retroarch-cores/
+/opt/backups/agents/timings/
 ```
 
-## Repo Rules
+A failed validation should leave the previous component recoverable from these directories.
 
-- Public repo content should stay limited to the updater entrypoints, `data/`, and `manifest.json`.
-- Release binaries belong in GitHub Releases, not in the main repo tree.
-- If a future change needs another runtime file, add it because `update.sh` depends on it, not because of old wrapper habits.
+## RGBPi-Extra
+
+This updater and RGBPi-Extra are separate projects.
+
+RGBPi-Extra is useful for extra systems, additional cores and OS4 tweaks. RGB-Pi 27 Updater is intended to maintain the small base stack above. Avoid letting two tools replace the same core bundle without keeping a backup.
+
+## Status
+
+This fork is experimental until the modernization branch has been tested on a real RGB-Pi OS4 Final 27 installation and CRT.
