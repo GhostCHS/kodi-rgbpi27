@@ -138,7 +138,7 @@ for key in required:
         raise SystemExit(f"manifest asset has invalid binary_sha256: {key}")
 
     url = item.get("url", "")
-    if not isinstance(url, str) or any(ch in url for ch in "\r\n\t'\"\`$"):
+    if not isinstance(url, str) or any(ch in url for ch in ("\r", "\n", "\t", "'", '"', "`", "$")):
         raise SystemExit(f"manifest asset has unsafe URL: {key}")
     parsed = urllib.parse.urlsplit(url)
     if parsed.scheme != "https" or parsed.hostname not in allowed_hosts:
@@ -173,12 +173,8 @@ github_release_asset_api_url() {
   tag="${BASH_REMATCH[3]}"
   filename="${BASH_REMATCH[4]}"
 
-  if [[ "$tag" == "latest" ]]; then
-    release_endpoint="https://api.github.com/repos/${owner}/${repo}/releases/latest"
-  else
-    encoded_tag="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$tag")"
-    release_endpoint="https://api.github.com/repos/${owner}/${repo}/releases/tags/${encoded_tag}"
-  fi
+  encoded_tag="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$tag")"
+  release_endpoint="https://api.github.com/repos/${owner}/${repo}/releases/tags/${encoded_tag}"
 
   release_json="$(curl -fsSL -sS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$GITHUB_API_TIMEOUT" "$release_endpoint" 2>/dev/null)" || return 1
   asset_id="$(
@@ -204,7 +200,7 @@ raise SystemExit(1)
 download_to_file() {
   local log_file="$1" dry_run="$2" url="$3" destination="$4"
   local tmp direct_rc=0 api_url="" attempt rc=1
-  tmp="${destination}.part.$"
+  tmp="${destination}.part.${BASHPID}"
 
   if [[ "$dry_run" == "YES" ]]; then
     log "$log_file" "DRY-RUN: download $url -> $destination"
@@ -214,7 +210,10 @@ download_to_file() {
   mkdir -p "$(dirname "$destination")"
   rm -f "$tmp"
 
-  curl -fL -sS     --connect-timeout "$CURL_CONNECT_TIMEOUT"     --max-time "$CURL_MAX_TIME"     "$url" -o "$tmp" || direct_rc=$?
+  curl -fL -sS \
+    --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+    --max-time "$CURL_MAX_TIME" \
+    "$url" -o "$tmp" || direct_rc=$?
 
   if ((direct_rc == 0)); then
     mv -f "$tmp" "$destination"
@@ -229,7 +228,12 @@ download_to_file() {
     log "$log_file" "Trying GitHub release-asset API fallback"
     for attempt in 1 2; do
       rc=0
-      curl -fL -sS         -H 'Accept: application/octet-stream'         -H 'X-GitHub-Api-Version: 2022-11-28'         --connect-timeout "$CURL_CONNECT_TIMEOUT"         --max-time "$CURL_MAX_TIME"         "$api_url" -o "$tmp" || rc=$?
+      curl -fL -sS \
+        -H 'Accept: application/octet-stream' \
+        -H 'X-GitHub-Api-Version: 2022-11-28' \
+        --connect-timeout "$CURL_CONNECT_TIMEOUT" \
+        --max-time "$CURL_MAX_TIME" \
+        "$api_url" -o "$tmp" || rc=$?
       if ((rc == 0)); then
         mv -f "$tmp" "$destination"
         log "$log_file" "GitHub API fallback succeeded"
