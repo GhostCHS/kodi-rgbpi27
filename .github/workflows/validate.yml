@@ -33,6 +33,74 @@ jobs:
       - name: Validate manifest JSON
         run: python3 -m json.tool manifest.json >/dev/null
 
+      - name: Verify release assets referenced by manifest
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json
+          import os
+          import re
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          manifest = json.loads(Path("manifest.json").read_text(encoding="utf-8"))
+          pattern = re.compile(
+              r"^https://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/([^/?#]+)$"
+          )
+          release_cache = {}
+
+          def fetch_release(owner, repo, tag):
+              key = (owner, repo, tag)
+              if key in release_cache:
+                  return release_cache[key]
+              encoded = urllib.parse.quote(tag, safe="")
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{encoded}",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "rgbpi27-manifest-validator",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  release = json.load(response)
+              release_cache[key] = release
+              return release
+
+          for key, item in manifest["assets"].items():
+              url = item["url"]
+              match = pattern.match(url)
+              if not match:
+                  raise SystemExit(f"{key}: unsupported stable asset URL: {url}")
+
+              owner, repo, tag, filename = match.groups()
+              release = fetch_release(owner, repo, tag)
+              assets = {asset["name"]: asset for asset in release.get("assets", [])}
+              asset = assets.get(filename)
+              if not asset:
+                  raise SystemExit(f"{key}: asset {filename!r} missing from {owner}/{repo}@{tag}")
+              if asset.get("state") != "uploaded" or int(asset.get("size", 0)) <= 0:
+                  raise SystemExit(f"{key}: asset is not a complete uploaded file")
+              if asset.get("browser_download_url") != url:
+                  raise SystemExit(
+                      f"{key}: manifest URL differs from GitHub browser_download_url"
+                  )
+
+              digest = asset.get("digest") or ""
+              expected = f"sha256:{item['sha256']}"
+              if digest and digest.lower() != expected.lower():
+                  raise SystemExit(
+                      f"{key}: GitHub release digest mismatch: {digest} != {expected}"
+                  )
+
+              print(
+                  f"OK {key}: {owner}/{repo}@{tag}/{filename} "
+                  f"size={asset['size']} digest={digest or 'not-reported'}"
+              )
+
       - name: Validate manifest schema
         shell: python
         run: |
