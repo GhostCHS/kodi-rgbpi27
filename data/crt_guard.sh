@@ -82,16 +82,24 @@ if [[ -x "$RETROARCH_BIN" ]]; then
 
   features="$("$RETROARCH_BIN" --features 2>/dev/null || true)"
   if [[ -n "$features" ]]; then
-    for spec in       'KMS:KMS'       'EGL:EGL'       'OpenGLES:OpenGLES'       'ALSA:ALSA'       'UDEV:UDEV'
-    do
-      label="${spec%%:*}"
-      token="${spec#*:}"
+    for token in KMS EGL ALSA UDEV; do
       if printf '%s\n' "$features" | grep -Ei "^[[:space:]]*${token}[[:space:]].*yes" >/dev/null; then
-        ok "RetroArch feature enabled: $label"
+        ok "RetroArch feature enabled: $token"
       else
-        fail "RetroArch feature missing/disabled: $label"
+        fail "RetroArch feature missing/disabled: $token"
       fi
     done
+
+    # RGB-Pi's validated 1.22.0 build reports its GL path as "OpenGL",
+    # while newer GLES-oriented builds can report "OpenGLES". KMS + EGL
+    # remain mandatory; accept either GL capability label here.
+    if printf '%s\n' "$features" | grep -Ei '^[[:space:]]*OpenGLES[[:space:]].*yes' >/dev/null; then
+      ok "RetroArch graphics API enabled: OpenGLES"
+    elif printf '%s\n' "$features" | grep -Ei '^[[:space:]]*OpenGL[[:space:]].*yes' >/dev/null; then
+      ok "RetroArch graphics API enabled: OpenGL (RGB-Pi compatible report)"
+    else
+      fail "RetroArch has neither OpenGL nor OpenGLES enabled"
+    fi
   else
     fail "RetroArch --features returned no usable feature list"
   fi
