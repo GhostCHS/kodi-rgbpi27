@@ -84,7 +84,7 @@ main() {
   if [[ -n "$filename" && -f "${ASSET_ROOT}/${filename}" ]]; then
     run_cmd "$LOG_FILE" "$DRY_RUN" "cp '${ASSET_ROOT}/${filename}' '$ARCHIVE_PATH'"
   else
-    run_cmd "$LOG_FILE" "$DRY_RUN" "curl -fL --connect-timeout 15 '$url' -o '$ARCHIVE_PATH'"
+    download_to_file "$LOG_FILE" "$DRY_RUN" "$url" "$ARCHIVE_PATH"
   fi
   if [[ -n "$checksum" && "$checksum" != "unknown" ]]; then
     local actual
