@@ -1,6 +1,12 @@
 name: Build experimental RetroArch
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-retroarch-experimental.yml"
+      - "experimental/retroarch-version.txt"
   workflow_dispatch:
     inputs:
       version:
@@ -44,7 +50,7 @@ jobs:
       - name: Fetch RetroArch source
         shell: bash
         env:
-          RA_VERSION: ${{ inputs.version }}
+          RA_VERSION: ${{ inputs.version || '1.22.2' }}
         run: |
           set -euo pipefail
           git clone --depth 1 --branch "v${RA_VERSION}" \
@@ -84,7 +90,7 @@ jobs:
       - name: Record build metadata
         shell: bash
         env:
-          RA_VERSION: ${{ inputs.version }}
+          RA_VERSION: ${{ inputs.version || '1.22.2' }}
         run: |
           set -euo pipefail
           mkdir -p /work/package/retroarch
@@ -118,11 +124,11 @@ jobs:
       - name: Upload experimental artifact
         uses: actions/upload-artifact@v4
         with:
-          name: retroarch-rgbpi-${{ inputs.version }}-experimental
+          name: retroarch-rgbpi-${{ inputs.version || '1.22.2' }}-experimental
           path: |
-            /work/retroarch-rgbpi-${{ inputs.version }}-experimental.tar.gz
-            /work/retroarch-rgbpi-${{ inputs.version }}-experimental.tar.gz.sha256
-            /work/retroarch-${{ inputs.version }}-binary.sha256
+            /work/retroarch-rgbpi-${{ inputs.version || '1.22.2' }}-experimental.tar.gz
+            /work/retroarch-rgbpi-${{ inputs.version || '1.22.2' }}-experimental.tar.gz.sha256
+            /work/retroarch-${{ inputs.version || '1.22.2' }}-binary.sha256
             /work/package/BUILDINFO.txt
             /work/package/FEATURES.txt
             /work/package/LDD.txt
