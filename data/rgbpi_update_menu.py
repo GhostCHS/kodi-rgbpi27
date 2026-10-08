@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import select
+import signal
 import subprocess
 import sys
 import time
@@ -36,6 +37,7 @@ BTN_BACK = 6
 BTN_START = 7
 COMBO_WINDOW_SECONDS = 0.35
 PROGRESS_RE = re.compile(r"\[(\d{1,3})%\]\s*\[[^\]]*\]\s*(.*)")
+UPDATE_STEP_TIMEOUT_SECONDS = int(os.environ.get("RGBPI_UPDATE_STEP_TIMEOUT", "300"))
 
 
 @dataclass
@@ -509,6 +511,7 @@ class MenuApp:
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            start_new_session=True,
         )
         assert proc.stdout is not None
         fd = proc.stdout.fileno()
@@ -552,6 +555,23 @@ class MenuApp:
 
             elapsed = now - started_at
             output_age = max(0, int(now - last_output_at))
+
+            if elapsed >= UPDATE_STEP_TIMEOUT_SECONDS and proc.poll() is None:
+                if log_handle is not None:
+                    log_handle.write(
+                        f"ERROR: step timed out after {UPDATE_STEP_TIMEOUT_SECONDS}s; skipping\n"
+                    )
+                    log_handle.flush()
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                    proc.wait(timeout=3)
+                except Exception:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except Exception:
+                        pass
+                return 124
+
             spin = spinner[int(elapsed * 4) % len(spinner)]
             activity = f"{spin} {cpu_state}  elapsed {format_elapsed(elapsed)}  output {output_age}s ago"
 
