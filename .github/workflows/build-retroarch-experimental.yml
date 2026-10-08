@@ -29,6 +29,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # Bullseye moved to archive.debian.org after the end of regular support.
+          # Use the frozen Bullseye userspace deliberately so produced binaries stay
+          # compatible with RGB-Pi OS4 Final 27 instead of silently linking against
+          # a newer Debian/glibc baseline.
+          cat > /etc/apt/sources.list <<'EOF'
+          deb http://archive.debian.org/debian bullseye main
+          deb http://archive.debian.org/debian bullseye-updates main
+          deb http://archive.debian.org/debian-security bullseye-security main
+          EOF
+          printf 'Acquire::Check-Valid-Until "false";\n' > /etc/apt/apt.conf.d/99bullseye-archive
+
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             build-essential \
