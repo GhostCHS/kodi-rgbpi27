@@ -73,3 +73,17 @@ Rollback:
 ```bash
 sudo cp -a /opt/retroarch/retroarch.rgbpi27-backup /opt/retroarch/retroarch
 ```
+
+
+## Current 1.22.2 prerelease
+
+A reproducible build completed successfully on 2026-10-08 and is published as a GitHub prerelease:
+
+- Tag: `retroarch-1.22.2-experimental`
+- Release: https://github.com/GhostCHS/kodi-rgbpi27/releases/tag/retroarch-1.22.2-experimental
+- Tarball SHA-256: `e890287b0afb8226e704c36de93b727112cb54648e88cbf66a48a357425ebba4`
+- Binary SHA-256: `16c0c0b95c4182f8c91ca0776954747f98c62078c9c5c0fb91e2d099f5d1e90e`
+- Maximum required glibc symbol: `GLIBC_2.30`
+- Build commit: `d1433d63be8f0a59e305bd96f10c53a1338975ed`
+
+The build reports KMS, EGL, OpenGL/OpenGL ES, ALSA and udev enabled. It remains **experimental** until the real CRT test matrix passes.
