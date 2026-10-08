@@ -18,6 +18,63 @@ TARGET_BIN="${INSTALL_ROOT}/retroarch"
 VERSION_FILE="${INSTALL_ROOT}/.rgbpi-retroarch-version"
 DRY_RUN="NO"
 MODE="update"
+CRT_GUARD_SCRIPT="${DATA_ROOT}/crt_guard.sh"
+TIMINGS_FILE="/opt/rgbpi/ui/data/timings.dat"
+ALLOW_UNVALIDATED_CRT="${ALLOW_UNVALIDATED_CRT:-NO}"
+
+validate_installed_binary() {
+  local log_file="$1"
+
+  [[ -x "$TARGET_BIN" ]] || {
+    log "$log_file" "ERROR: installed RetroArch binary is not executable"
+    return 1
+  }
+
+  [[ -s "$TIMINGS_FILE" ]] || {
+    log "$log_file" "ERROR: RGB-Pi timings.dat is missing or empty"
+    return 1
+  }
+
+  if command -v readelf >/dev/null 2>&1; then
+    readelf -h "$TARGET_BIN" 2>/dev/null | grep -q 'Machine:.*AArch64' || {
+      log "$log_file" "ERROR: RetroArch binary is not AArch64"
+      return 1
+    }
+  fi
+
+  if command -v ldd >/dev/null 2>&1 && ldd "$TARGET_BIN" 2>&1 | grep -q 'not found'; then
+    log "$log_file" "ERROR: RetroArch has unresolved shared libraries"
+    return 1
+  fi
+
+  local features token
+  features="$("$TARGET_BIN" --features 2>/dev/null || true)"
+  [[ -n "$features" ]] || {
+    log "$log_file" "ERROR: RetroArch --features produced no usable output"
+    return 1
+  }
+
+  for token in KMS EGL OpenGLES ALSA UDEV; do
+    if ! printf '%s\n' "$features" | grep -Ei "^[[:space:]]*${token}[[:space:]].*yes" >/dev/null; then
+      log "$log_file" "ERROR: required CRT/runtime feature is missing: $token"
+      return 1
+    fi
+  done
+
+  log "$log_file" "CRT software guard: KMS/EGL/OpenGLES/ALSA/UDEV present, timings.dat intact"
+  return 0
+}
+
+restore_backup() {
+  local backup="$1"
+  log "$LOG_FILE" "Restoring previous RetroArch after validation failure"
+  [[ -f "$backup/retroarch" ]] && cp -a "$backup/retroarch" "$TARGET_BIN"
+  if [[ -f "$backup/.rgbpi-retroarch-version" ]]; then
+    cp -a "$backup/.rgbpi-retroarch-version" "$VERSION_FILE"
+  else
+    rm -f "$VERSION_FILE"
+  fi
+}
 
 parse_args() {
   case "${1:-}" in
@@ -49,12 +106,13 @@ main() {
     exit 1
   fi
 
-  local available filename url checksum binary_checksum installed update_flag local_sha fallback_detected
+  local available filename url checksum binary_checksum validation installed update_flag local_sha fallback_detected
   available="$(manifest_field retroarch version)"
   filename="$(manifest_field retroarch filename)"
   url="$(manifest_field retroarch url)"
   checksum="$(manifest_field retroarch sha256)"
   binary_checksum="$(manifest_field retroarch binary_sha256)"
+  validation="$(manifest_field retroarch validation)"
   installed="unknown"
   fallback_detected="NO"
 
@@ -79,6 +137,7 @@ main() {
   log "$LOG_FILE" "Installed version : $installed"
   log "$LOG_FILE" "Available version : $available"
   log "$LOG_FILE" "Asset URL          : $url"
+  log "$LOG_FILE" "CRT validation     : $validation"
   [[ "$fallback_detected" == "YES" ]] && log "$LOG_FILE" "Detected installed RetroArch via binary checksum"
 
   if [[ "$MODE" == "status" ]]; then
@@ -93,6 +152,19 @@ main() {
     line
     log "$LOG_FILE" "No RetroArch update performed."
     exit 0
+  fi
+
+  if [[ "$validation" != *crt* && "$ALLOW_UNVALIDATED_CRT" != "YES" ]]; then
+    line
+    log "$LOG_FILE" "ERROR: refusing RetroArch payload without CRT validation metadata: $validation"
+    log "$LOG_FILE" "Set ALLOW_UNVALIDATED_CRT=YES only for deliberate test builds."
+    exit 2
+  fi
+
+  if [[ ! -s "$TIMINGS_FILE" ]]; then
+    line
+    log "$LOG_FILE" "ERROR: refusing update because RGB-Pi timings.dat is missing or empty"
+    exit 2
   fi
 
   bar 30 "Downloading RetroArch package"
@@ -133,18 +205,20 @@ main() {
     exit 1
   fi
 
-  bar 82 "Installing RetroArch"
+  bar 82 "Installing RetroArch binary only (configs/timings untouched)"
   run_cmd "$LOG_FILE" "$DRY_RUN" "install -m 0755 '$tmpdir/retroarch/retroarch' '$TARGET_BIN'"
-  run_cmd "$LOG_FILE" "$DRY_RUN" "printf '%s\n' '$available' > '$VERSION_FILE'"
 
-  bar 94 "Validating binary"
-  if [[ ! -x "$TARGET_BIN" ]]; then
+  bar 92 "Checking CRT runtime compatibility"
+  if [[ "$DRY_RUN" != "YES" ]] && ! validate_installed_binary "$LOG_FILE"; then
     line
-    log "$LOG_FILE" "ERROR: installed RetroArch binary is not executable"
-    [[ -f "$backup/retroarch" ]] && cp -a "$backup/retroarch" "$TARGET_BIN"
+    restore_backup "$backup"
     rm -rf "$tmpdir"
+    log "$LOG_FILE" "ERROR: update rolled back because CRT/runtime checks failed"
     exit 1
   fi
+
+  bar 96 "Recording validated RetroArch version"
+  run_cmd "$LOG_FILE" "$DRY_RUN" "printf '%s\n' '$available' > '$VERSION_FILE'"
 
   rm -rf "$tmpdir"
   bar 100 "RetroArch update complete"
