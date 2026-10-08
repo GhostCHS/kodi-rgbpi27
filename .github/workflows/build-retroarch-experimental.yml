@@ -11,8 +11,8 @@ on:
     inputs:
       version:
         description: RetroArch version without leading v
-        required: true
-        default: "1.22.2"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -30,10 +30,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Bullseye moved to archive.debian.org after the end of regular support.
-          # Use the frozen Bullseye userspace deliberately so produced binaries stay
-          # compatible with RGB-Pi OS4 Final 27 instead of silently linking against
-          # a newer Debian/glibc baseline.
+          # Bullseye has moved to archive.debian.org. Keep this frozen userspace
+          # deliberately so the binary stays compatible with OS4 Final 27.
           cat > /etc/apt/sources.list <<'EOF'
           deb http://archive.debian.org/debian bullseye main
           deb http://archive.debian.org/debian bullseye-updates main
@@ -59,10 +57,32 @@ jobs:
             zlib1g-dev
           rm -rf /var/lib/apt/lists/*
 
-      - name: Fetch RetroArch source
+      - name: Check out updater repository
+        uses: actions/checkout@v4
+
+      - name: Resolve RetroArch version
         shell: bash
         env:
-          RA_VERSION: ${{ inputs.version || '1.22.2' }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${INPUT_VERSION:-}" ]]; then
+            version="${INPUT_VERSION#v}"
+          else
+            version="$(tr -d '[:space:]' < experimental/retroarch-version.txt)"
+            version="${version#v}"
+          fi
+
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Invalid RetroArch version: $version" >&2
+            exit 1
+          }
+
+          echo "RA_VERSION=$version" >> "$GITHUB_ENV"
+          echo "Building RetroArch $version"
+
+      - name: Fetch RetroArch source
+        shell: bash
         run: |
           set -euo pipefail
           git clone --depth 1 --branch "v${RA_VERSION}" \
@@ -101,8 +121,6 @@ jobs:
 
       - name: Record build metadata
         shell: bash
-        env:
-          RA_VERSION: ${{ inputs.version || '1.22.2' }}
         run: |
           set -euo pipefail
           mkdir -p /work/package/retroarch
@@ -110,12 +128,13 @@ jobs:
 
           /work/RetroArch/retroarch --features > /work/package/FEATURES.txt || true
           ldd /work/RetroArch/retroarch > /work/package/LDD.txt || true
+          readelf --version-info /work/RetroArch/retroarch > /work/package/VERSION-INFO.txt || true
 
           cat > /work/package/BUILDINFO.txt <<EOF
           RetroArch=${RA_VERSION}
           Target=RGB-Pi OS4 Final 27 experimental
           Architecture=aarch64
-          BuildUserspace=Debian Bullseye
+          BuildUserspace=Debian Bullseye archive
           CPU=cortex-a72
           Video=KMS+EGL+OpenGL ES
           Audio=ALSA
@@ -124,6 +143,7 @@ jobs:
           X11=disabled
           Wayland=disabled
           Status=EXPERIMENTAL_NOT_CRT_VALIDATED
+          Commit=${GITHUB_SHA}
           EOF
 
           cd /work/package
@@ -136,13 +156,88 @@ jobs:
       - name: Upload experimental artifact
         uses: actions/upload-artifact@v4
         with:
-          name: retroarch-rgbpi-${{ inputs.version || '1.22.2' }}-experimental
+          name: retroarch-rgbpi-experimental
           path: |
-            /work/retroarch-rgbpi-${{ inputs.version || '1.22.2' }}-experimental.tar.gz
-            /work/retroarch-rgbpi-${{ inputs.version || '1.22.2' }}-experimental.tar.gz.sha256
-            /work/retroarch-${{ inputs.version || '1.22.2' }}-binary.sha256
+            /work/retroarch-rgbpi-*-experimental.tar.gz
+            /work/retroarch-rgbpi-*-experimental.tar.gz.sha256
+            /work/retroarch-*-binary.sha256
             /work/package/BUILDINFO.txt
             /work/package/FEATURES.txt
             /work/package/LDD.txt
+            /work/package/VERSION-INFO.txt
           if-no-files-found: error
           retention-days: 30
+
+  publish-prerelease:
+    name: Publish experimental prerelease
+    needs: build-arm64-bullseye
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: retroarch-rgbpi-experimental
+          path: dist
+
+      - name: Resolve release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^RetroArch=//p' dist/BUILDINFO.txt | head -n1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Could not resolve RetroArch version" >&2
+            exit 1
+          }
+
+          echo "RA_VERSION=$version" >> "$GITHUB_ENV"
+          echo "RA_TAG=retroarch-${version}-experimental" >> "$GITHUB_ENV"
+
+          cat > release-notes.md <<EOF
+          Experimental RetroArch ${version} build for RGB-Pi OS4 Final 27 on Raspberry Pi 4 / Pi 400.
+
+          This is a Bullseye/aarch64 Cortex-A72 build using KMS + EGL + OpenGL ES, ALSA and udev.
+
+          **This build has not yet passed real 15-kHz CRT validation and is intentionally not used by the stable updater manifest.**
+
+          Test with a full SD-card backup and validate 240p/288p, PAL 50 Hz, NTSC refresh, mode switching, audio, controller reconnect, and return-to-menu behavior before promotion.
+
+          Build commit: ${GITHUB_SHA}
+          EOF
+
+      - name: Create or refresh prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets=(
+            "dist/retroarch-rgbpi-${RA_VERSION}-experimental.tar.gz"
+            "dist/retroarch-rgbpi-${RA_VERSION}-experimental.tar.gz.sha256"
+            "dist/retroarch-${RA_VERSION}-binary.sha256"
+            "dist/BUILDINFO.txt"
+            "dist/FEATURES.txt"
+            "dist/LDD.txt"
+            "dist/VERSION-INFO.txt"
+          )
+
+          if gh release view "$RA_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RA_TAG" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            gh release edit "$RA_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "RetroArch ${RA_VERSION} experimental for RGB-Pi OS4 Final 27" \
+              --notes-file release-notes.md \
+              --prerelease
+          else
+            gh release create "$RA_TAG" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "RetroArch ${RA_VERSION} experimental for RGB-Pi OS4 Final 27" \
+              --notes-file release-notes.md \
+              --prerelease
+          fi
