@@ -55,16 +55,16 @@ kernel replacement
 Place the updater in the global RGB-Pi ROMs/Ports directory:
 
 ```bash
-mkdir -p "/roms/ports/RGB-PI Updater"
+mkdir -p "/roms/ports/RGB-PI Updater27"
 
 curl -fsSL \
   "https://raw.githubusercontent.com/GhostCHS/kodi-rgbpi27/main/update.sh" \
-  -o "/roms/ports/RGB-PI Updater/update.sh"
+  -o "/roms/ports/RGB-PI Updater27/update.sh"
 
-chmod +x "/roms/ports/RGB-PI Updater/update.sh"
+chmod +x "/roms/ports/RGB-PI Updater27/update.sh"
 ```
 
-Then rescan games in the RGB-Pi UI and launch it from **Ports**. The updater is location-independent internally; `/roms/ports/RGB-PI Updater` is the canonical installation path.
+Then rescan games in the RGB-Pi UI and launch it from **Ports**. The updater is location-independent internally; `/roms/ports/RGB-PI Updater27` is the canonical installation path.
 
 The minimal launcher downloads the current text runtime from this repository on first start.
 
@@ -73,7 +73,7 @@ The minimal launcher downloads the current text runtime from this repository on 
 From SSH:
 
 ```bash
-"/roms/ports/RGB-PI Updater/update.sh" preflight
+"/roms/ports/RGB-PI Updater27/update.sh" preflight
 ```
 
 Typical Final 27 output should show:
