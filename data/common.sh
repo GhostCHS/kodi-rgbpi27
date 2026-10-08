@@ -163,7 +163,7 @@ fetch_manifest() {
     fi
   fi
 
-  if [[ -n "$MANIFEST_URL_PRIMARY" ]] && curl -fsSL --retry 3 --connect-timeout 15 "$MANIFEST_URL_PRIMARY" -o "$MANIFEST_CACHE"; then
+  if [[ -n "$MANIFEST_URL_PRIMARY" ]] && curl -fsSL --connect-timeout 15 "$MANIFEST_URL_PRIMARY" -o "$MANIFEST_CACHE"; then
     if validate_manifest "$MANIFEST_CACHE" >/dev/null 2>&1; then
       log "$log_file" "manifest_source=$MANIFEST_URL_PRIMARY"
       return 0
@@ -171,7 +171,7 @@ fetch_manifest() {
     rm -f "$MANIFEST_CACHE"
   fi
 
-  if [[ -n "$MANIFEST_URL_FALLBACK" ]] && curl -fsSL --retry 3 --connect-timeout 15 "$MANIFEST_URL_FALLBACK" -o "$MANIFEST_CACHE"; then
+  if [[ -n "$MANIFEST_URL_FALLBACK" ]] && curl -fsSL --connect-timeout 15 "$MANIFEST_URL_FALLBACK" -o "$MANIFEST_CACHE"; then
     if validate_manifest "$MANIFEST_CACHE" >/dev/null 2>&1; then
       log "$log_file" "manifest_source=$MANIFEST_URL_FALLBACK"
       return 0
