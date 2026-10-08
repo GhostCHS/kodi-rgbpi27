@@ -11,7 +11,6 @@ APP_ROOT="${APP_ROOT:-$(cd -- "${DATA_ROOT}/.." && pwd)}"
 DOWNLOAD_DIR="${DATA_ROOT}/debs"
 KODI_DEB_PATH="${DOWNLOAD_DIR}/kodi.deb"
 JOYSTICK_PAYLOAD_PATH="${DOWNLOAD_DIR}/kodi-omega-peripheral-joystick.tar.gz"
-BACKUP_ROOT="/opt/backups/agents/kodi"
 LOG_FILE="/var/log/update_kodi.log"
 LOG_DIR="/var/log/kodi-updater"
 RUNTIME_DEPS=(libtinyxml2-8)
@@ -219,33 +218,6 @@ find_kodi_binary() {
     [[ -x "$candidate" ]] && printf '%s\n' "$candidate" && return 0
   done
   return 1
-}
-
-backup_item() {
-  local source="$1" target_dir="$2" name="$3"
-  if [[ -e "$source" || -L "$source" ]]; then
-    cp -a "$source" "$target_dir/$name"
-  fi
-}
-
-create_backup() {
-  local log_file="$1"
-  local ts backup
-  ts="$(date +%F_%H%M%S)"
-  backup="${BACKUP_ROOT}/${ts}"
-  mkdir -p "$backup"
-  backup_item /usr/local/bin/kodi "$backup" local-bin-kodi
-  backup_item /usr/local/bin/kodi-TexturePacker "$backup" local-bin-kodi-TexturePacker
-  backup_item /usr/local/bin/kodi-standalone "$backup" local-bin-kodi-standalone
-  backup_item /usr/local/lib/aarch64-linux-gnu/kodi "$backup" local-lib-kodi
-  backup_item /usr/local/share/kodi "$backup" local-share-kodi
-  backup_item "$LOCAL_SHARE_ADDON_DIR" "$backup" local-share-peripheral.joystick
-  backup_item "$LOCAL_LIB_ADDON_DIR" "$backup" local-lib-peripheral.joystick
-  backup_item "$LEGACY_SHARE_ADDON_DIR" "$backup" legacy-share-peripheral.joystick
-  backup_item "$LEGACY_LIB_ADDON_DIR" "$backup" legacy-lib-peripheral.joystick
-  backup_item "$KODI_JS0_BRIDGE_DST" "$backup" kodi_js0_bridge.py
-  backup_item "$KODI_JS0_BRIDGE_SERVICE" "$backup" kodi-js0-bridge.service
-  log "$log_file" "backup=$backup"
 }
 
 purge_old_packages() {
@@ -472,11 +444,6 @@ main() {
   if [[ "$DRY_RUN" != "YES" ]]; then
     bar 48 "Validating joystick payload"
     validate_joystick_payload "$LOG_FILE" "$available_addon" "$addon_abi"
-  fi
-
-  bar 56 "Creating rollback backup"
-  if [[ "$DRY_RUN" != "YES" ]]; then
-    create_backup "$LOG_FILE"
   fi
 
   if [[ "$kodi_needs_update" == "YES" || ! -x /usr/local/bin/kodi ]]; then
