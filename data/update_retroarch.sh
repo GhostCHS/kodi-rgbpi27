@@ -47,21 +47,30 @@ validate_installed_binary() {
     return 1
   fi
 
-  local features token
+  local features token graphics_api=""
   features="$("$TARGET_BIN" --features 2>/dev/null || true)"
   [[ -n "$features" ]] || {
     log "$log_file" "ERROR: RetroArch --features produced no usable output"
     return 1
   }
 
-  for token in KMS EGL OpenGLES ALSA UDEV; do
+  for token in KMS EGL ALSA UDEV; do
     if ! printf '%s\n' "$features" | grep -Ei "^[[:space:]]*${token}[[:space:]].*yes" >/dev/null; then
       log "$log_file" "ERROR: required CRT/runtime feature is missing: $token"
       return 1
     fi
   done
 
-  log "$log_file" "CRT software guard: KMS/EGL/OpenGLES/ALSA/UDEV present, timings.dat intact"
+  if printf '%s\n' "$features" | grep -Ei '^[[:space:]]*OpenGLES[[:space:]].*yes' >/dev/null; then
+    graphics_api="OpenGLES"
+  elif printf '%s\n' "$features" | grep -Ei '^[[:space:]]*OpenGL[[:space:]].*yes' >/dev/null; then
+    graphics_api="OpenGL"
+  else
+    log "$log_file" "ERROR: required graphics API is missing: OpenGL/OpenGLES"
+    return 1
+  fi
+
+  log "$log_file" "CRT software guard: KMS/EGL/${graphics_api}/ALSA/UDEV present, timings.dat intact"
   return 0
 }
 
