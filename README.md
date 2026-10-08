@@ -106,6 +106,8 @@ The guard verifies the software-side invariants that can be checked without a ph
 
 A passing software guard is **not** proof of correct 15-kHz output. Real hardware validation remains mandatory.
 
+The framebuffer UI deliberately keeps `timings.dat` out of the normal **Update RetroArch + Cores** action. A timings update is exposed separately as **Update Timings (ADVANCED)** so CRT timing data cannot be replaced as a side effect of a routine emulator/core update.
+
 ## RetroArch update safety
 
 The stable RetroArch updater replaces only:
