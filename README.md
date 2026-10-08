@@ -131,6 +131,8 @@ For that reason the stable manifest currently keeps the known RGB-Pi build until
 
 See [docs/RELEASE-POLICY.md](docs/RELEASE-POLICY.md).
 
+A reproducible ARM64/Bullseye **experimental 1.22.2 build workflow** is available in GitHub Actions. It is deliberately not wired into the stable manifest until real CRT testing passes. See [docs/RETROARCH-EXPERIMENTAL.md](docs/RETROARCH-EXPERIMENTAL.md).
+
 ## Rollback
 
 The component scripts create backups below:
