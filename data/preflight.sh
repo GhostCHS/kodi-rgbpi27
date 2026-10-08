@@ -4,6 +4,8 @@ set -u
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DATA_ROOT="${DATA_ROOT:-$SCRIPT_DIR}"
 APP_ROOT="${APP_ROOT:-$(cd -- "${DATA_ROOT}/.." && pwd)}"
+RGBPI_ADMIN_USER="${RGBPI_ADMIN_USER:-admin}"
+CRT_GUARD_SCRIPT="${DATA_ROOT}/crt_guard.sh"
 
 ARCH="$(uname -m 2>/dev/null || echo unknown)"
 KERNEL="$(uname -r 2>/dev/null || echo unknown)"
@@ -13,7 +15,6 @@ OS_CODENAME="unknown"
 OS_PRETTY="unknown"
 
 if [[ -r /etc/os-release ]]; then
-  # shellcheck disable=SC1091
   . /etc/os-release
   OS_ID="${ID:-unknown}"
   OS_CODENAME="${VERSION_CODENAME:-unknown}"
@@ -28,6 +29,10 @@ RETROARCH="NO"
 
 TIMINGS="NO"
 [[ -f /opt/rgbpi/ui/data/timings.dat ]] && TIMINGS="YES"
+
+CURRENT_USER="$(id -un 2>/dev/null || echo unknown)"
+ADMIN_ACCOUNT="NO"
+id "$RGBPI_ADMIN_USER" >/dev/null 2>&1 && ADMIN_ACCOUNT="YES"
 
 SUDO_MODE="restricted-or-unavailable"
 if [[ "$EUID" -eq 0 ]]; then
@@ -57,6 +62,10 @@ if [[ "$OS_CODENAME" != "bullseye" ]]; then
   WARNINGS+=("OS4 Final 27 is Bullseye-based; detected codename: $OS_CODENAME")
 fi
 
+if [[ "$ADMIN_ACCOUNT" != "YES" ]]; then
+  WARNINGS+=("Preferred maintenance account '$RGBPI_ADMIN_USER' does not exist yet; run setup-admin as root")
+fi
+
 cat <<EOF
 RGB-PI 27 UPDATER - PREFLIGHT
 
@@ -71,7 +80,24 @@ RGBPI_UI=$RGBPI_UI
 RETROARCH=$RETROARCH
 TIMINGS=$TIMINGS
 ROOT_ACCESS=$SUDO_MODE
+CURRENT_USER=$CURRENT_USER
+PREFERRED_MAINTENANCE_USER=$RGBPI_ADMIN_USER
+ADMIN_ACCOUNT=$ADMIN_ACCOUNT
 EOF
+
+CRT_STATUS="UNKNOWN"
+if [[ -f "$CRT_GUARD_SCRIPT" ]]; then
+  echo
+  echo "CRT compatibility guard:"
+  crt_output="$(bash "$CRT_GUARD_SCRIPT" --status 2>&1 || true)"
+  printf '%s\n' "$crt_output"
+  CRT_STATUS="$(printf '%s\n' "$crt_output" | awk -F= '/^CRT_GUARD=/{value=$2} END{print value}')"
+  [[ -n "$CRT_STATUS" ]] || CRT_STATUS="UNKNOWN"
+else
+  WARNINGS+=("CRT guard script is missing")
+fi
+
+echo "CRT_GUARD_STATUS=$CRT_STATUS"
 
 if (("${#WARNINGS[@]}" > 0)); then
   echo

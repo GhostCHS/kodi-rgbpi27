@@ -24,8 +24,10 @@ The manifest records both the validated package and known upstream version. A ne
 - Targets this repository (`GhostCHS/kodi-rgbpi27`) for runtime updates.
 - Adds an OS4 / architecture / Raspberry Pi preflight check.
 - Allows version/status checks without root.
-- Removes the old automatic password guessing.
-- Removes automatic creation of `pi ALL=(ALL) NOPASSWD:ALL`.
+- Uses **admin** as the preferred maintenance account for this fork.
+- Initial maintenance credentials are **admin / admin**; changing the password immediately is strongly recommended.
+- Keeps the original OS4 account untouched for compatibility with RGB-Pi services and scripts.
+- Removes automatic creation of unrestricted `NOPASSWD:ALL` sudo rules.
 - Validates the manifest before using it.
 - Keeps SHA-256 validation for downloadable payloads.
 - Keeps timestamped rollback backups before component replacement.
@@ -68,6 +70,41 @@ Then rescan games in the RGB-Pi UI and launch it from **Ports**. The updater is 
 
 The minimal launcher downloads the current text runtime from this repository on first start.
 
+### Maintenance account
+
+The preferred maintenance login for RGB-Pi Updater27 is `admin` with the initial password `admin`. Change it after the first login with `passwd`.
+
+On an existing stock OS4 installation, create/prepare the account once from a root-capable shell:
+
+```bash
+sudo bash "/roms/ports/RGB-PI Updater27/update.sh" setup-admin
+```
+
+The setup does **not** rename or delete the original RGB-Pi account, because OS4 components may still reference it internally.
+
+### Maintenance account
+
+The preferred maintenance login for RGB-Pi Updater27 is:
+
+```text
+username: admin
+password: admin
+```
+
+The password is intentionally simple only as an initial default. Change it after the first login:
+
+```bash
+passwd
+```
+
+On an existing stock OS4 installation, create/prepare the account once from a root-capable shell:
+
+```bash
+sudo bash "/roms/ports/RGB-PI Updater27/update.sh" setup-admin
+```
+
+The setup does **not** rename or delete the original RGB-Pi account, because OS4 components may still reference it internally.
+
 ## Preflight
 
 From SSH:
@@ -91,7 +128,7 @@ The primary tested target is Raspberry Pi 4 / Pi 400 running the Bullseye-based 
 
 Reading status does not require root. Installing Kodi, RetroArch, cores or timings does.
 
-RGB-Pi OS4 Final 27 can intentionally ship the `pi` account with a very restricted sudo policy. This fork does not silently weaken that policy.
+RGB-Pi OS4 Final 27 can ship its original account with a very restricted sudo policy. Updater27 uses `admin` as the preferred maintenance account, while leaving the original account intact for OS compatibility.
 
 See [docs/ROOT-ACCESS.md](docs/ROOT-ACCESS.md) before enabling update privileges.
 
@@ -113,7 +150,23 @@ See [docs/ROOT-ACCESS.md](docs/ROOT-ACCESS.md) before enabling update privileges
 ./update.sh timings --update
 ```
 
-Update actions require working root privileges.
+Update actions require working root privileges. The `admin` account uses normal password-protected sudo; the updater does not enable unrestricted passwordless root.
+
+## Progress display
+
+Long update operations show more than a percentage. The framebuffer UI displays the current phase, elapsed time, time since the last command output, and a lightweight CPU-activity indicator. This makes it easier to distinguish an active compile/extract/install step from a process that is only waiting for I/O or has stopped producing output.
+
+## CRT compatibility guard
+
+Run the software-side CRT check at any time:
+
+```bash
+"/roms/ports/RGB-PI Updater27/update.sh" crt-check
+```
+
+The guard verifies the Pi/OS architecture, RGB-Pi UI and `timings.dat`, AArch64 RetroArch binary, shared-library resolution, and the KMS/EGL/OpenGLES/ALSA/UDEV feature set. Stable RetroArch updates are also required to carry CRT-validation metadata and are rolled back if the post-install runtime check fails.
+
+This is an additional protection layer, not a substitute for the real 15-kHz CRT regression test.
 
 ## RetroArch 1.22.2
 

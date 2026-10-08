@@ -20,6 +20,7 @@ DRY_RUN="NO"
 MODE="update"
 RUN_KODI_SMOKE_TEST="${RUN_KODI_SMOKE_TEST:-YES}"
 KODI_SMOKE_TIMEOUT="${KODI_SMOKE_TIMEOUT:-20}"
+RGBPI_ADMIN_USER="${RGBPI_ADMIN_USER:-admin}"
 
 LOCAL_SHARE_ADDON_DIR="/usr/local/share/kodi/addons/peripheral.joystick"
 LOCAL_LIB_ADDON_DIR="/usr/local/lib/aarch64-linux-gnu/kodi/addons/peripheral.joystick"
@@ -30,6 +31,18 @@ KODI_JS0_BRIDGE_DST="/usr/local/bin/kodi_js0_bridge.py"
 KODI_JS0_BRIDGE_SERVICE="/etc/systemd/system/kodi-js0-bridge.service"
 
 REPAIR_REASONS=()
+
+kodi_home_dirs() {
+  local user home
+  for user in "$RGBPI_ADMIN_USER" pi root; do
+    if [[ "$user" == "root" ]]; then
+      home="/root"
+    else
+      home="$(getent passwd "$user" 2>/dev/null | cut -d: -f6)"
+    fi
+    [[ -n "$home" && -d "$home" ]] && printf '%s\n' "$home"
+  done | awk '!seen[$0]++'
+}
 
 parse_args() {
   case "${1:-}" in
@@ -271,7 +284,10 @@ install_joystick_payload() {
   mkdir -p /usr/local/share/kodi/addons /usr/local/lib/aarch64-linux-gnu/kodi/addons
   tar -xzf "$JOYSTICK_PAYLOAD_PATH" -C /usr/local --no-same-owner
   chown -R root:root "$LOCAL_SHARE_ADDON_DIR" "$LOCAL_LIB_ADDON_DIR"
-  rm -rf /home/pi/.kodi/userdata/addon_data/peripheral.joystick /root/.kodi/userdata/addon_data/peripheral.joystick
+  local home
+  while IFS= read -r home; do
+    rm -rf "$home/.kodi/userdata/addon_data/peripheral.joystick"
+  done < <(kodi_home_dirs)
 }
 
 validate_static_state() {
@@ -332,17 +348,16 @@ validate_static_state() {
 }
 
 pick_smoke_log() {
-  local newest=""
-  local candidate
-  for candidate in /home/pi/.kodi/temp/kodi.log /root/.kodi/temp/kodi.log; do
+  local newest="" home candidate
+  while IFS= read -r home; do
+    candidate="$home/.kodi/temp/kodi.log"
     if [[ -f "$candidate" ]]; then
       if [[ -z "$newest" || "$candidate" -nt "$newest" ]]; then
         newest="$candidate"
       fi
     fi
-  done
-  [[ -n "$newest" ]] && printf '%s
-' "$newest"
+  done < <(kodi_home_dirs)
+  [[ -n "$newest" ]] && printf '%s\n' "$newest"
 }
 
 run_smoke_test() {
@@ -358,7 +373,10 @@ run_smoke_test() {
     return 0
   }
 
-  rm -f /home/pi/.kodi/temp/kodi.log /root/.kodi/temp/kodi.log
+  local home
+  while IFS= read -r home; do
+    rm -f "$home/.kodi/temp/kodi.log"
+  done < <(kodi_home_dirs)
   timeout "${KODI_SMOKE_TIMEOUT}s" /opt/rgbpi/kodi.sh >/dev/null 2>&1 || true
 
   [[ -e /dev/input/js0 ]] && js_present="YES"

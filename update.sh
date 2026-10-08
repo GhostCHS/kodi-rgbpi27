@@ -9,10 +9,14 @@ REPO_OWNER="${REPO_OWNER:-GhostCHS}"
 REPO_NAME="${REPO_NAME:-kodi-rgbpi27}"
 UPDATE_BRANCH="${UPDATE_BRANCH:-main}"
 RAW_BASE="${RAW_BASE:-https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${UPDATE_BRANCH}}"
+RGBPI_ADMIN_USER="${RGBPI_ADMIN_USER:-admin}"
+RGBPI_ADMIN_PASSWORD="${RGBPI_ADMIN_PASSWORD:-admin}"
 
 RUNTIME_FILES=(
   common.sh
   preflight.sh
+  crt_guard.sh
+  setup_admin_user.sh
   update_kodi.sh
   update_retroarch.sh
   update_cores.sh
@@ -31,7 +35,7 @@ bundled_mode_ready() {
 export_runtime_env() {
   export APP_ROOT="$APP_DIR"
   export DATA_ROOT="$DATA_DIR"
-  export REPO_OWNER REPO_NAME UPDATE_BRANCH RAW_BASE
+  export REPO_OWNER REPO_NAME UPDATE_BRANCH RAW_BASE RGBPI_ADMIN_USER RGBPI_ADMIN_PASSWORD
   export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
   export PYTHONUNBUFFERED=1
@@ -93,11 +97,13 @@ RGB-PI 27 UPDATER
 
 Installing updates needs root privileges.
 
-This fork no longer guesses the stock RGB-Pi password and no longer writes
-"pi ALL=(ALL) NOPASSWD:ALL" automatically.
+The preferred maintenance account for this fork is "admin".
+New setups use the initial credentials admin / admin and should change the
+password immediately after the first login with: passwd
 
-RGB-Pi OS4 Final 27 may deliberately restrict sudo for user "pi".
-Status checks and Preflight still work without root.
+The original RGB-Pi OS4 account is left in place for compatibility.
+This updater never installs NOPASSWD:ALL automatically.
+Status checks, Preflight and CRT checks still work without root.
 
 See docs/ROOT-ACCESS.md in the repository for the supported bootstrap options.
 EOF
@@ -125,6 +131,8 @@ sudo_exec_script() {
     "REPO_OWNER=$REPO_OWNER" \
     "REPO_NAME=$REPO_NAME" \
     "UPDATE_BRANCH=$UPDATE_BRANCH" \
+    "RGBPI_ADMIN_USER=$RGBPI_ADMIN_USER" \
+    "RGBPI_ADMIN_PASSWORD=$RGBPI_ADMIN_PASSWORD" \
     "FORCE_BUNDLED_MANIFEST=${FORCE_BUNDLED_MANIFEST:-NO}" \
     "SDL_AUDIODRIVER=$SDL_AUDIODRIVER" \
     "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" \
@@ -155,6 +163,15 @@ case "${1:-}" in
     ensure_runtime
     export_runtime_env
     exec bash "$DATA_DIR/preflight.sh"
+    ;;
+  crt-check)
+    ensure_runtime
+    export_runtime_env
+    exec bash "$DATA_DIR/crt_guard.sh" --status
+    ;;
+  setup-admin)
+    shift
+    sudo_exec_script "$DATA_DIR/setup_admin_user.sh" "${1:-}"
     ;;
   kodi)
     shift
@@ -192,6 +209,8 @@ case "${1:-}" in
 Usage:
   ./update.sh                       Launch RGB-Pi 27 updater menu
   ./update.sh preflight             Check OS4 / Pi / architecture compatibility
+  ./update.sh crt-check             Check software-side CRT compatibility guards
+  sudo ./update.sh setup-admin      Create/prepare admin (initial password: admin)
   ./update.sh kodi [--status|--update]
   ./update.sh retroarch [--status|--update]
   ./update.sh cores [--status|--update]
