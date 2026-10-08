@@ -10,7 +10,6 @@ APP_ROOT="${APP_ROOT:-$(cd -- "${DATA_ROOT}/.." && pwd)}"
 
 DOWNLOAD_DIR="${DATA_ROOT}/debs"
 ARCHIVE_PATH="${DOWNLOAD_DIR}/retroarch-rgbpi.tar.gz"
-BACKUP_ROOT="/opt/backups/agents/retroarch"
 LOG_FILE="/var/log/retroarch-update.log"
 LOG_DIR="/var/log/retroarch-updater"
 INSTALL_ROOT="/opt/retroarch"
@@ -74,16 +73,6 @@ validate_installed_binary() {
   return 0
 }
 
-restore_backup() {
-  local backup="$1"
-  log "$LOG_FILE" "Restoring previous RetroArch after validation failure"
-  [[ -f "$backup/retroarch" ]] && cp -a "$backup/retroarch" "$TARGET_BIN"
-  if [[ -f "$backup/.rgbpi-retroarch-version" ]]; then
-    cp -a "$backup/.rgbpi-retroarch-version" "$VERSION_FILE"
-  else
-    rm -f "$VERSION_FILE"
-  fi
-}
 
 parse_args() {
   case "${1:-}" in
@@ -193,16 +182,8 @@ main() {
     fi
   fi
 
-  local ts backup tmpdir
-  ts="$(date +%F_%H%M%S)"
-  backup="${BACKUP_ROOT}/${ts}"
+  local tmpdir
   tmpdir="$(mktemp -d)"
-
-  bar 48 "Creating rollback backup"
-  run_cmd "$LOG_FILE" "$DRY_RUN" "mkdir -p '$backup'"
-  [[ -e "$TARGET_BIN" ]] && run_cmd "$LOG_FILE" "$DRY_RUN" "cp -a '$TARGET_BIN' '$backup/'"
-  [[ -f "$VERSION_FILE" ]] && run_cmd "$LOG_FILE" "$DRY_RUN" "cp -a '$VERSION_FILE' '$backup/'"
-  log "$LOG_FILE" "backup=$backup"
 
   bar 62 "Extracting RetroArch package"
   run_cmd "$LOG_FILE" "$DRY_RUN" "tar -xzf '$ARCHIVE_PATH' -C '$tmpdir'"
@@ -220,9 +201,8 @@ main() {
   bar 92 "Checking CRT runtime compatibility"
   if [[ "$DRY_RUN" != "YES" ]] && ! validate_installed_binary "$LOG_FILE"; then
     line
-    restore_backup "$backup"
     rm -rf "$tmpdir"
-    log "$LOG_FILE" "ERROR: update rolled back because CRT/runtime checks failed"
+    log "$LOG_FILE" "ERROR: installed RetroArch failed CRT/runtime validation; no rollback backup is configured"
     exit 1
   fi
 

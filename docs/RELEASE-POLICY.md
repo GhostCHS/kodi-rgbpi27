@@ -8,11 +8,10 @@ A payload can be promoted to `manifest.json` only when all of the following are 
 
 1. The payload is built for ARM64 against a userspace compatible with Debian Bullseye / OS4 Final 27.
 2. SHA-256 hashes are recorded before release.
-3. The previous payload is backed up by the installer.
-4. The update passes a real Raspberry Pi 4 + RGB-Pi cable + CRT test.
-5. PAL and NTSC content are tested.
-6. Returning to the RGB-Pi frontend still works.
-7. No kernel, firmware or distribution upgrade is required.
+3. The update passes a real Raspberry Pi 4 + RGB-Pi cable + CRT test.
+4. PAL and NTSC content are tested.
+5. Returning to the RGB-Pi frontend still works.
+6. No kernel, firmware or distribution upgrade is required.
 
 ## Automated CRT preservation guard
 
@@ -22,11 +21,11 @@ Before a RetroArch payload is considered safe for the stable updater, Updater27 
 - `/opt/rgbpi/ui/data/timings.dat` remains present and non-empty;
 - the replacement RetroArch binary is AArch64;
 - all dynamic libraries resolve;
-- RetroArch reports KMS, EGL, OpenGLES, ALSA and UDEV support;
+- RetroArch reports KMS, EGL, ALSA and UDEV support plus either OpenGL or OpenGLES;
 - stable manifest metadata marks the RetroArch payload as CRT-validated;
 - stable `timings.dat` metadata remains explicitly tied to OS4 Final 27;
 - the RetroArch updater replaces the frontend binary only and does not overwrite RGB-Pi configs or timings;
-- failed post-install validation restores the previous RetroArch binary and version marker automatically.
+- failed post-install validation stops and reports an error; no automatic rollback copy is kept.
 
 These checks protect the CRT path from accidental generic desktop builds. They do not prove correct 15-kHz timing on physical hardware, so the real CRT regression matrix below remains mandatory before promotion.
 
