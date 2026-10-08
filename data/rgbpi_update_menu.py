@@ -72,7 +72,7 @@ def use_bundled_manifest() -> bool:
 
 def _runtime_env_args() -> list[str]:
     args = [f"APP_ROOT={APP_ROOT}", f"DATA_ROOT={DATA_DIR}"]
-    for key in ("REPO_OWNER", "REPO_NAME", "UPDATE_BRANCH"):
+    for key in ("REPO_OWNER", "REPO_NAME", "UPDATE_BRANCH", "RGBPI_ADMIN_USER"):
         value = os.environ.get(key)
         if value:
             args.append(f"{key}={value}")
@@ -182,6 +182,20 @@ def read_log_tail(path: Path, max_lines: int = 11) -> list[str]:
         return [f"Could not read log: {exc}"]
     tail = lines[-max_lines:]
     return tail or ["Log is empty."]
+
+
+def admin_account_exists() -> bool:
+    user = os.environ.get("RGBPI_ADMIN_USER", "admin")
+    try:
+        return subprocess.run(
+            ["id", "-u", user],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+            check=False,
+        ).returncode == 0
+    except Exception:
+        return False
 
 
 def root_access_ready() -> bool:
@@ -326,6 +340,7 @@ class MenuApp:
             return MenuState("retroarch", "RETROARCH", "UPDATES / LOGS", entries)
         if self.state == "system":
             entries = [
+                MenuEntry(f"Admin user: {'READY' if admin_account_exists() else 'MISSING'}"),
                 MenuEntry(f"GUI root: {'READY' if root_access_ready() else 'OFF'}"),
                 MenuEntry("Run Preflight", self.open_preflight, "action"),
                 MenuEntry("Run CRT Check", self.open_crt_check, "action"),
