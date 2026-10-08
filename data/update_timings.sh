@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Manifest-driven timings.dat updater for RGB-Pi.
 
-set -u
+set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DATA_ROOT="${DATA_ROOT:-$SCRIPT_DIR}"
