@@ -6,8 +6,8 @@ REPO_OWNER="${REPO_OWNER:-GhostCHS}"
 REPO_NAME="${REPO_NAME:-kodi-rgbpi27}"
 UPDATE_BRANCH="${UPDATE_BRANCH:-main}"
 RELEASE_TAG="${RELEASE_TAG:-latest}"
-MANIFEST_URL_PRIMARY="${MANIFEST_URL_PRIMARY-https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${RELEASE_TAG}/manifest.json}"
-MANIFEST_URL_FALLBACK="${MANIFEST_URL_FALLBACK-https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${UPDATE_BRANCH}/manifest.json}"
+MANIFEST_URL_PRIMARY="${MANIFEST_URL_PRIMARY-https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${UPDATE_BRANCH}/manifest.json}"
+MANIFEST_URL_FALLBACK="${MANIFEST_URL_FALLBACK-https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${RELEASE_TAG}/manifest.json}"
 FORCE_BUNDLED_MANIFEST="${FORCE_BUNDLED_MANIFEST:-NO}"
 SCRIPT_DIR="${SCRIPT_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}"
 DATA_ROOT="${DATA_ROOT:-$SCRIPT_DIR}"
@@ -17,6 +17,9 @@ MANIFEST_CACHE="${MANIFEST_CACHE:-${WORK_ROOT}/manifest.json}"
 BUNDLED_MANIFEST="${BUNDLED_MANIFEST:-${DATA_ROOT}/manifest.json}"
 ASSET_ROOT="${ASSET_ROOT:-${DATA_ROOT}}"
 MANIFEST_CACHE_MAX_AGE="${MANIFEST_CACHE_MAX_AGE:-300}"
+CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-15}"
+CURL_MAX_TIME="${CURL_MAX_TIME:-90}"
+GITHUB_API_TIMEOUT="${GITHUB_API_TIMEOUT:-30}"
 
 bar() {
   local pct="${1:-0}" msg="${2:-}"
@@ -95,7 +98,9 @@ validate_manifest() {
   local path="$1"
   python3 - "$path" <<'PY'
 import json
+import re
 import sys
+import urllib.parse
 
 path = sys.argv[1]
 with open(path, "r", encoding="utf-8") as fh:
@@ -109,12 +114,35 @@ if not isinstance(assets, dict):
     raise SystemExit("manifest has no assets object")
 
 required = ("kodi", "kodi_joystick", "retroarch", "cores", "timings")
+allowed_hosts = {"github.com", "api.github.com", "raw.githubusercontent.com"}
+
 for key in required:
     item = assets.get(key)
     if not isinstance(item, dict):
         raise SystemExit(f"manifest missing asset: {key}")
     if not item.get("version"):
         raise SystemExit(f"manifest asset has no version: {key}")
+
+    filename = item.get("filename", "")
+    if not isinstance(filename, str) or not filename or "/" in filename or "\\" in filename or filename in {".", ".."}:
+        raise SystemExit(f"manifest asset has unsafe filename: {key}")
+
+    digest = item.get("sha256", "")
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-fA-F]{64}", digest) is None:
+        raise SystemExit(f"manifest asset has invalid sha256: {key}")
+
+    binary_digest = item.get("binary_sha256")
+    if binary_digest not in (None, "") and (
+        not isinstance(binary_digest, str) or re.fullmatch(r"[0-9a-fA-F]{64}", binary_digest) is None
+    ):
+        raise SystemExit(f"manifest asset has invalid binary_sha256: {key}")
+
+    url = item.get("url", "")
+    if not isinstance(url, str) or any(ch in url for ch in "\r\n\t'\"\`$"):
+        raise SystemExit(f"manifest asset has unsafe URL: {key}")
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https" or parsed.hostname not in allowed_hosts:
+        raise SystemExit(f"manifest asset URL host is not allowed: {key}")
 
 if data.get("channel") == "stable":
     policy = data.get("policy", {})
@@ -130,6 +158,91 @@ if data.get("channel") == "stable":
     if "rgbpi-os4-final27" not in str(assets["timings"].get("validation", "")).lower():
         raise SystemExit("stable timings.dat is not marked for RGB-Pi OS4 Final 27")
 PY
+}
+
+github_release_asset_api_url() {
+  local url="$1"
+  local owner repo tag filename release_endpoint encoded_tag release_json asset_id
+
+  if [[ ! "$url" =~ ^https://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/([^/?#]+)$ ]]; then
+    return 1
+  fi
+
+  owner="${BASH_REMATCH[1]}"
+  repo="${BASH_REMATCH[2]}"
+  tag="${BASH_REMATCH[3]}"
+  filename="${BASH_REMATCH[4]}"
+
+  if [[ "$tag" == "latest" ]]; then
+    release_endpoint="https://api.github.com/repos/${owner}/${repo}/releases/latest"
+  else
+    encoded_tag="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$tag")"
+    release_endpoint="https://api.github.com/repos/${owner}/${repo}/releases/tags/${encoded_tag}"
+  fi
+
+  release_json="$(curl -fsSL -sS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$GITHUB_API_TIMEOUT" "$release_endpoint" 2>/dev/null)" || return 1
+  asset_id="$(
+    printf '%s' "$release_json" | python3 -c '
+import json, sys
+name = sys.argv[1]
+try:
+    release = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(1)
+for asset in release.get("assets", []):
+    if asset.get("name") == name and asset.get("state") == "uploaded":
+        print(asset.get("id", ""))
+        raise SystemExit(0)
+raise SystemExit(1)
+' "$filename"
+  )" || return 1
+
+  [[ -n "$asset_id" ]] || return 1
+  printf 'https://api.github.com/repos/%s/%s/releases/assets/%s\n' "$owner" "$repo" "$asset_id"
+}
+
+download_to_file() {
+  local log_file="$1" dry_run="$2" url="$3" destination="$4"
+  local tmp direct_rc=0 api_url="" attempt rc=1
+  tmp="${destination}.part.$"
+
+  if [[ "$dry_run" == "YES" ]]; then
+    log "$log_file" "DRY-RUN: download $url -> $destination"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$destination")"
+  rm -f "$tmp"
+
+  curl -fL -sS     --connect-timeout "$CURL_CONNECT_TIMEOUT"     --max-time "$CURL_MAX_TIME"     "$url" -o "$tmp" || direct_rc=$?
+
+  if ((direct_rc == 0)); then
+    mv -f "$tmp" "$destination"
+    return 0
+  fi
+
+  rm -f "$tmp"
+  log "$log_file" "WARN: direct download failed (curl exit $direct_rc): $url"
+
+  api_url="$(github_release_asset_api_url "$url" || true)"
+  if [[ -n "$api_url" ]]; then
+    log "$log_file" "Trying GitHub release-asset API fallback"
+    for attempt in 1 2; do
+      rc=0
+      curl -fL -sS         -H 'Accept: application/octet-stream'         -H 'X-GitHub-Api-Version: 2022-11-28'         --connect-timeout "$CURL_CONNECT_TIMEOUT"         --max-time "$CURL_MAX_TIME"         "$api_url" -o "$tmp" || rc=$?
+      if ((rc == 0)); then
+        mv -f "$tmp" "$destination"
+        log "$log_file" "GitHub API fallback succeeded"
+        return 0
+      fi
+      rm -f "$tmp"
+      ((attempt < 2)) && sleep 2
+    done
+  fi
+
+  rm -f "$tmp"
+  log "$log_file" "ERROR: download failed after fallback attempts: $url"
+  return 1
 }
 
 fetch_manifest() {
@@ -163,7 +276,7 @@ fetch_manifest() {
     fi
   fi
 
-  if [[ -n "$MANIFEST_URL_PRIMARY" ]] && curl -fsSL --connect-timeout 15 "$MANIFEST_URL_PRIMARY" -o "$MANIFEST_CACHE"; then
+  if [[ -n "$MANIFEST_URL_PRIMARY" ]] && curl -fsSL -sS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$GITHUB_API_TIMEOUT" "$MANIFEST_URL_PRIMARY" -o "$MANIFEST_CACHE"; then
     if validate_manifest "$MANIFEST_CACHE" >/dev/null 2>&1; then
       log "$log_file" "manifest_source=$MANIFEST_URL_PRIMARY"
       return 0
@@ -171,7 +284,7 @@ fetch_manifest() {
     rm -f "$MANIFEST_CACHE"
   fi
 
-  if [[ -n "$MANIFEST_URL_FALLBACK" ]] && curl -fsSL --connect-timeout 15 "$MANIFEST_URL_FALLBACK" -o "$MANIFEST_CACHE"; then
+  if [[ -n "$MANIFEST_URL_FALLBACK" ]] && curl -fsSL -sS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$GITHUB_API_TIMEOUT" "$MANIFEST_URL_FALLBACK" -o "$MANIFEST_CACHE"; then
     if validate_manifest "$MANIFEST_CACHE" >/dev/null 2>&1; then
       log "$log_file" "manifest_source=$MANIFEST_URL_FALLBACK"
       return 0
