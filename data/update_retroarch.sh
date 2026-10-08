@@ -169,7 +169,7 @@ main() {
   if [[ -n "$filename" && -f "${ASSET_ROOT}/${filename}" ]]; then
     run_cmd "$LOG_FILE" "$DRY_RUN" "cp '${ASSET_ROOT}/${filename}' '$ARCHIVE_PATH'"
   else
-    run_cmd "$LOG_FILE" "$DRY_RUN" "curl -fL --retry 3 --connect-timeout 15 '$url' -o '$ARCHIVE_PATH'"
+    run_cmd "$LOG_FILE" "$DRY_RUN" "curl -fL --connect-timeout 15 '$url' -o '$ARCHIVE_PATH'"
   fi
 
   if [[ -n "$checksum" && "$checksum" != "unknown" ]]; then
