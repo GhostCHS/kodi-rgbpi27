@@ -12,7 +12,6 @@ DOWNLOAD_DIR="${DATA_ROOT}/debs"
 TARGET_FILE="/opt/rgbpi/ui/data/timings.dat"
 VERSION_FILE="/opt/rgbpi/ui/data/.timings-version"
 TMP_FILE="${DOWNLOAD_DIR}/timings.dat"
-BACKUP_ROOT="/opt/backups/agents/timings"
 LOG_FILE="/var/log/timings-update.log"
 LOG_DIR="/var/log/timings-updater"
 DRY_RUN="NO"
@@ -78,10 +77,6 @@ main() {
     exit 0
   fi
 
-  local ts backup
-  ts="$(date +%F_%H%M%S)"
-  backup="${BACKUP_ROOT}/${ts}"
-
   bar 30 "Downloading timings.dat"
   if [[ -n "$filename" && -f "${ASSET_ROOT}/${filename}" ]]; then
     run_cmd "$LOG_FILE" "$DRY_RUN" "cp '${ASSET_ROOT}/${filename}' '$TMP_FILE'"
@@ -99,12 +94,6 @@ main() {
     log "$LOG_FILE" "ERROR: timings.dat download is empty"
     exit 1
   fi
-
-  bar 55 "Creating rollback backup"
-  run_cmd "$LOG_FILE" "$DRY_RUN" "mkdir -p '$backup'"
-  [[ -f "$TARGET_FILE" ]] && run_cmd "$LOG_FILE" "$DRY_RUN" "cp -a '$TARGET_FILE' '$backup/'"
-  [[ -f "$VERSION_FILE" ]] && run_cmd "$LOG_FILE" "$DRY_RUN" "cp -a '$VERSION_FILE' '$backup/'"
-  log "$LOG_FILE" "backup=$backup"
 
   bar 82 "Installing timings.dat"
   run_cmd "$LOG_FILE" "$DRY_RUN" "install -m 0666 '$TMP_FILE' '$TARGET_FILE'"
