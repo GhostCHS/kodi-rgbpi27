@@ -115,6 +115,20 @@ for key in required:
         raise SystemExit(f"manifest missing asset: {key}")
     if not item.get("version"):
         raise SystemExit(f"manifest asset has no version: {key}")
+
+if data.get("channel") == "stable":
+    policy = data.get("policy", {})
+    if policy.get("stable_requires_crt_validation") is not True:
+        raise SystemExit("stable manifest must require CRT validation")
+
+    if "crt" not in str(assets["retroarch"].get("validation", "")).lower():
+        raise SystemExit("stable RetroArch asset lacks CRT validation metadata")
+
+    if "crt" not in str(assets["cores"].get("validation", "")).lower():
+        raise SystemExit("stable core bundle lacks CRT validation metadata")
+
+    if "rgbpi-os4-final27" not in str(assets["timings"].get("validation", "")).lower():
+        raise SystemExit("stable timings.dat is not marked for RGB-Pi OS4 Final 27")
 PY
 }
 
