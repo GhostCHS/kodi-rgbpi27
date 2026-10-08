@@ -1,16 +1,10 @@
 {
   "schema_version": 2,
   "channel": "stable",
-  "updated_at": "2026-10-08T21:30:00Z",
+  "updated_at": "2026-10-08T21:45:00Z",
   "project": {
     "name": "RGB-Pi 27 Updater",
-    "repository": "GhostCHS/kodi-rgbpi27",
-    "maintenance_account": {
-      "username": "admin",
-      "initial_password": "admin",
-      "password_change_recommended": true,
-      "stock_os_account_preserved": true
-    }
+    "repository": "GhostCHS/kodi-rgbpi27"
   },
   "target": {
     "platform": "RGB-Pi OS4 Final 27",

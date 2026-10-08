@@ -4,7 +4,6 @@ set -u
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DATA_ROOT="${DATA_ROOT:-$SCRIPT_DIR}"
 APP_ROOT="${APP_ROOT:-$(cd -- "${DATA_ROOT}/.." && pwd)}"
-RGBPI_ADMIN_USER="${RGBPI_ADMIN_USER:-admin}"
 CRT_GUARD_SCRIPT="${DATA_ROOT}/crt_guard.sh"
 
 ARCH="$(uname -m 2>/dev/null || echo unknown)"
@@ -31,8 +30,6 @@ TIMINGS="NO"
 [[ -f /opt/rgbpi/ui/data/timings.dat ]] && TIMINGS="YES"
 
 CURRENT_USER="$(id -un 2>/dev/null || echo unknown)"
-ADMIN_ACCOUNT="NO"
-id "$RGBPI_ADMIN_USER" >/dev/null 2>&1 && ADMIN_ACCOUNT="YES"
 
 SUDO_MODE="restricted-or-unavailable"
 if [[ "$EUID" -eq 0 ]]; then
@@ -62,10 +59,6 @@ if [[ "$OS_CODENAME" != "bullseye" ]]; then
   WARNINGS+=("OS4 Final 27 is Bullseye-based; detected codename: $OS_CODENAME")
 fi
 
-if [[ "$ADMIN_ACCOUNT" != "YES" ]]; then
-  WARNINGS+=("Preferred maintenance account '$RGBPI_ADMIN_USER' does not exist yet; run setup-admin as root")
-fi
-
 cat <<EOF
 RGB-PI 27 UPDATER - PREFLIGHT
 
@@ -81,8 +74,6 @@ RETROARCH=$RETROARCH
 TIMINGS=$TIMINGS
 ROOT_ACCESS=$SUDO_MODE
 CURRENT_USER=$CURRENT_USER
-PREFERRED_MAINTENANCE_USER=$RGBPI_ADMIN_USER
-ADMIN_ACCOUNT=$ADMIN_ACCOUNT
 EOF
 
 CRT_STATUS="UNKNOWN"
