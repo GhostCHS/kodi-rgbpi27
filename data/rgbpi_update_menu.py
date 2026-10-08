@@ -308,6 +308,7 @@ class MenuApp:
             return MenuState("kodi", "KODI", "SYSTEM UPDATE", entries)
         if self.state == "retroarch":
             pending = self.retroarch_pending_updates()
+            safe_pending = self.retroarch_safe_pending_updates()
             entries = [
                 MenuEntry(f"RetroArch: {self.retroarch.installed}"),
                 MenuEntry(f"RetroArch new: {self.retroarch.available}"),
@@ -317,14 +318,16 @@ class MenuApp:
                 MenuEntry(f"Timings new: {self.timings.available}"),
                 MenuEntry(f"Pending: {', '.join(pending) if pending else 'none'}"),
             ]
-            if pending:
-                entries.append(MenuEntry("Update All", self.run_retroarch_stack_update, "action"))
+            if safe_pending:
+                entries.append(MenuEntry("Update RetroArch + Cores", self.run_retroarch_stack_update, "action"))
+            if self.timings.update_available:
+                entries.append(MenuEntry("Update Timings (ADVANCED)", lambda: self.run_and_refresh(TIMINGS_SCRIPT), "action"))
             entries.extend([
                 MenuEntry("View Update log", lambda: self.open_log("RetroArch Update Log", RETROARCH_STACK_LOG), "action"),
                 MenuEntry("View RetroArch log", lambda: self.open_log("RetroArch Log", RETROARCH_LOG), "action"),
                 MenuEntry("Back", lambda: self.open_state("main"), "action"),
             ])
-            return MenuState("retroarch", "RETROARCH", "UPDATES / LOGS", entries)
+            return MenuState("retroarch", "RETROARCH", "CRT-SAFE DEFAULTS", entries)
         if self.state == "system":
             entries = [
                 MenuEntry(f"GUI root: {'READY' if root_access_ready() else 'OFF'}"),
@@ -427,12 +430,23 @@ class MenuApp:
             pending.append("Timings")
         return pending
 
+    def retroarch_safe_pending_updates(self) -> list[str]:
+        pending = []
+        if self.retroarch.update_available:
+            pending.append("RetroArch")
+        if self.cores.update_available:
+            pending.append("Cores")
+        return pending
+
     def run_retroarch_stack_update(self) -> int:
-        steps = [
-            ("RetroArch", RETROARCH_SCRIPT),
-            ("Cores", CORES_SCRIPT),
-            ("Timings", TIMINGS_SCRIPT),
-        ]
+        steps = []
+        if self.retroarch.update_available:
+            steps.append(("RetroArch", RETROARCH_SCRIPT))
+        if self.cores.update_available:
+            steps.append(("Cores", CORES_SCRIPT))
+        if not steps:
+            self.set_notice("No RetroArch/core updates", 2.5)
+            return 0
         rc = self.run_steps_with_progress(steps, RETROARCH_STACK_LOG)
         self.refresh()
         self.set_notice("RetroArch stack updated" if rc == 0 else f"Update failed ({rc})", 2.5)
