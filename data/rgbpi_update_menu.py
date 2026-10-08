@@ -19,6 +19,7 @@ CORES_SCRIPT = DATA_DIR / "update_cores.sh"
 TIMINGS_SCRIPT = DATA_DIR / "update_timings.sh"
 PREFLIGHT_SCRIPT = DATA_DIR / "preflight.sh"
 BOOTSTRAP_SCRIPT = DATA_DIR / "bootstrap_local_metadata.sh"
+CRT_GUARD_SCRIPT = DATA_DIR / "crt_guard.sh"
 
 KODI_LOG = Path("/var/log/kodi-updater/latest.log")
 RETROARCH_LOG = Path("/var/log/retroarch-updater/latest.log")
@@ -325,13 +326,14 @@ class MenuApp:
             return MenuState("retroarch", "RETROARCH", "UPDATES / LOGS", entries)
         if self.state == "system":
             entries = [
-                MenuEntry(f"Root access: {'READY' if root_access_ready() else 'OFF'}"),
+                MenuEntry(f"GUI root: {'READY' if root_access_ready() else 'OFF'}"),
                 MenuEntry("Run Preflight", self.open_preflight, "action"),
+                MenuEntry("Run CRT Check", self.open_crt_check, "action"),
                 MenuEntry("Bootstrap Metadata", lambda: self.run_system_action(BOOTSTRAP_SCRIPT, "Metadata refreshed"), "action"),
                 MenuEntry("View Bootstrap log", lambda: self.open_log("Bootstrap Log", BOOTSTRAP_LOG), "action"),
                 MenuEntry("Back", lambda: self.open_state("main"), "action"),
             ]
-            return MenuState("system", "SYSTEM", "CHECKS / METADATA", entries)
+            return MenuState("system", "SYSTEM", "CRT / CHECKS / METADATA", entries)
         return MenuState("log", self.log_title, "B TO GO BACK", [MenuEntry(line) for line in self.log_lines] + [MenuEntry("Back", lambda: self.open_state("main"), "action")])
 
     def open_state(self, name: str) -> int:
@@ -369,6 +371,29 @@ class MenuApp:
             lines = [f"Preflight failed: {exc}"]
         self.log_title = "Preflight"
         self.log_lines = lines or ["No preflight output."]
+        self.state = "log"
+        self.index = max(0, len(self.log_lines))
+        return 0
+
+    def open_crt_check(self) -> int:
+        env = os.environ.copy()
+        env["APP_ROOT"] = str(APP_ROOT)
+        env["DATA_ROOT"] = str(DATA_DIR)
+        try:
+            proc = subprocess.run(
+                ["bash", str(CRT_GUARD_SCRIPT), "--status"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=20,
+                check=False,
+                env=env,
+            )
+            lines = proc.stdout.splitlines()
+        except Exception as exc:
+            lines = [f"CRT check failed: {exc}"]
+        self.log_title = "CRT Check"
+        self.log_lines = lines or ["No CRT check output."]
         self.state = "log"
         self.index = max(0, len(self.log_lines))
         return 0
