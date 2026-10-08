@@ -24,7 +24,7 @@ BASELINE_SCRIPT = DATA_DIR / "capture_crt_baseline.sh"
 
 KODI_LOG = Path("/var/log/kodi-updater/latest.log")
 RETROARCH_LOG = Path("/var/log/retroarch-updater/latest.log")
-RETROARCH_STACK_LOG = Path("/var/log/rgbpi-updater/retroarch-stack.log")
+UPDATE_ALL_LOG = APP_ROOT / "logs" / "update-all.log"
 BOOTSTRAP_LOG = Path("/var/log/rgbpi-updater-bootstrap/latest.log")
 WINDOW_SIZE = (320, 240)
 BUNDLED_ASSETS = [
@@ -283,51 +283,34 @@ class MenuApp:
 
     def build_state(self) -> MenuState:
         if self.state == "main":
+            pending = self.all_pending_updates()
             return MenuState(
                 name="main",
                 title="RGB-PI 27 UPDATER",
-                subtitle="KODI / RETROARCH / SYSTEM",
+                subtitle="ONE-BUTTON UPDATE",
                 entries=[
-                    MenuEntry("Kodi", lambda: self.open_state("kodi"), "action"),
-                    MenuEntry("RetroArch", lambda: self.open_state("retroarch"), "action"),
+                    MenuEntry(
+                        f"UPDATE EVERYTHING ({len(pending)})" if pending else "UPDATE EVERYTHING",
+                        self.run_update_all,
+                        "action",
+                    ),
+                    MenuEntry("Status", lambda: self.open_state("status"), "action"),
                     MenuEntry("System", lambda: self.open_state("system"), "action"),
+                    MenuEntry("View Update Log", lambda: self.open_log("Update All Log", UPDATE_ALL_LOG), "action"),
                     MenuEntry("Return", self.exit_app, "action"),
                 ],
             )
-        if self.state == "kodi":
+        if self.state == "status":
+            pending = self.all_pending_updates()
             entries = [
-                MenuEntry(f"Installed: {self.kodi.installed}"),
-                MenuEntry(f"Available: {self.kodi.available}"),
-            ]
-            if self.kodi.update_available:
-                entries.append(MenuEntry(f"Update Kodi {self.kodi.available}", lambda: self.run_and_refresh(KODI_SCRIPT), "action"))
-            entries.extend([
-                MenuEntry("View Kodi log", lambda: self.open_log("Kodi Log", KODI_LOG), "action"),
-                MenuEntry("Back", lambda: self.open_state("main"), "action"),
-            ])
-            return MenuState("kodi", "KODI", "SYSTEM UPDATE", entries)
-        if self.state == "retroarch":
-            pending = self.retroarch_pending_updates()
-            safe_pending = self.retroarch_safe_pending_updates()
-            entries = [
-                MenuEntry(f"RetroArch: {self.retroarch.installed}"),
-                MenuEntry(f"RetroArch new: {self.retroarch.available}"),
-                MenuEntry(f"Cores: {self.cores.installed}"),
-                MenuEntry(f"Cores new: {self.cores.available}"),
-                MenuEntry(f"Timings: {self.timings.installed}"),
-                MenuEntry(f"Timings new: {self.timings.available}"),
+                MenuEntry(f"Kodi: {self.kodi.installed} -> {self.kodi.available}"),
+                MenuEntry(f"RetroArch: {self.retroarch.installed} -> {self.retroarch.available}"),
+                MenuEntry(f"Cores: {self.cores.installed} -> {self.cores.available}"),
+                MenuEntry(f"Timings: {self.timings.installed} -> {self.timings.available}"),
                 MenuEntry(f"Pending: {', '.join(pending) if pending else 'none'}"),
-            ]
-            if safe_pending:
-                entries.append(MenuEntry("Update RetroArch + Cores", self.run_retroarch_stack_update, "action"))
-            if self.timings.update_available:
-                entries.append(MenuEntry("Update Timings (ADVANCED)", lambda: self.run_and_refresh(TIMINGS_SCRIPT), "action"))
-            entries.extend([
-                MenuEntry("View Update log", lambda: self.open_log("RetroArch Update Log", RETROARCH_STACK_LOG), "action"),
-                MenuEntry("View RetroArch log", lambda: self.open_log("RetroArch Log", RETROARCH_LOG), "action"),
                 MenuEntry("Back", lambda: self.open_state("main"), "action"),
-            ])
-            return MenuState("retroarch", "RETROARCH", "CRT-SAFE DEFAULTS", entries)
+            ]
+            return MenuState("status", "STATUS", "KODI / RETROARCH / CORES / TIMINGS", entries)
         if self.state == "system":
             entries = [
                 MenuEntry(f"GUI root: {'READY' if root_access_ready() else 'OFF'}"),
@@ -420,8 +403,10 @@ class MenuApp:
         self.set_notice("Update complete" if rc == 0 else f"Update failed ({rc})", 2.5)
         return rc
 
-    def retroarch_pending_updates(self) -> list[str]:
+    def all_pending_updates(self) -> list[str]:
         pending = []
+        if self.kodi.update_available:
+            pending.append("Kodi")
         if self.retroarch.update_available:
             pending.append("RetroArch")
         if self.cores.update_available:
@@ -430,26 +415,34 @@ class MenuApp:
             pending.append("Timings")
         return pending
 
-    def retroarch_safe_pending_updates(self) -> list[str]:
-        pending = []
-        if self.retroarch.update_available:
-            pending.append("RetroArch")
-        if self.cores.update_available:
-            pending.append("Cores")
-        return pending
-
-    def run_retroarch_stack_update(self) -> int:
-        steps = []
-        if self.retroarch.update_available:
-            steps.append(("RetroArch", RETROARCH_SCRIPT))
-        if self.cores.update_available:
-            steps.append(("Cores", CORES_SCRIPT))
-        if not steps:
-            self.set_notice("No RetroArch/core updates", 2.5)
-            return 0
-        rc = self.run_steps_with_progress(steps, RETROARCH_STACK_LOG)
+    def run_update_all(self) -> int:
         self.refresh()
-        self.set_notice("RetroArch stack updated" if rc == 0 else f"Update failed ({rc})", 2.5)
+        pending = self.all_pending_updates()
+
+        if not pending:
+            self.set_notice("Everything is up to date", 3.0)
+            return 0
+
+        if not root_access_ready():
+            self.set_notice("Root required for UPDATE EVERYTHING", 4.0)
+            return 77
+
+        steps: list[tuple[str, list[str]]] = [
+            ("CRT baseline", ["env", *_runtime_env_args(), "bash", str(BASELINE_SCRIPT)]),
+        ]
+        if self.kodi.update_available:
+            steps.append(("Kodi", sudo_script_command(KODI_SCRIPT, "--update")))
+        if self.retroarch.update_available:
+            steps.append(("RetroArch", sudo_script_command(RETROARCH_SCRIPT, "--update")))
+        if self.cores.update_available:
+            steps.append(("Cores", sudo_script_command(CORES_SCRIPT, "--update")))
+        if self.timings.update_available:
+            steps.append(("CRT Timings", sudo_script_command(TIMINGS_SCRIPT, "--update")))
+        steps.append(("CRT verification", ["env", *_runtime_env_args(), "bash", str(CRT_GUARD_SCRIPT), "--status"]))
+
+        rc = self.run_commands_with_progress(steps, UPDATE_ALL_LOG)
+        self.refresh()
+        self.set_notice("Everything updated" if rc == 0 else f"Update failed ({rc})", 3.0)
         return rc
 
     def run_system_action(self, script: Path, success_notice: str) -> int:
@@ -486,14 +479,14 @@ class MenuApp:
             step_total=1,
         )
 
-    def run_steps_with_progress(self, steps: list[tuple[str, Path]], log_path: Path) -> int:
+    def run_commands_with_progress(self, steps: list[tuple[str, list[str]]], log_path: Path) -> int:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as log_handle:
-            for index, (name, script) in enumerate(steps):
+            for index, (name, command) in enumerate(steps):
                 log_handle.write(f"== {name} ==\n")
                 rc = self.run_command_with_progress(
-                    sudo_script_command(script, "--update"),
-                    title="PLEASE WAIT",
+                    command,
+                    title="UPDATE EVERYTHING",
                     status=f"Step {index + 1}/{len(steps)}: {name}",
                     step_index=index,
                     step_total=len(steps),

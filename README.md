@@ -24,7 +24,7 @@ RetroArch 1.22.2 is available only as an experimental build until a real Raspber
 - targets `GhostCHS/kodi-rgbpi27` for runtime updates;
 - adds OS4 / Pi 4 / AArch64 preflight checks;
 - adds a software-side CRT compatibility guard;
-- captures a rootless CRT baseline before testing;
+- captures a CRT baseline automatically before a one-button update;
 - keeps SHA-256 validation for downloadable payloads;
 - keeps rollback backups before component replacement;
 - rolls RetroArch back automatically if post-install CRT/runtime validation fails;
@@ -106,7 +106,26 @@ The guard verifies the software-side invariants that can be checked without a ph
 
 A passing software guard is **not** proof of correct 15-kHz output. Real hardware validation remains mandatory.
 
-The framebuffer UI deliberately keeps `timings.dat` out of the normal **Update RetroArch + Cores** action. A timings update is exposed separately as **Update Timings (ADVANCED)** so CRT timing data cannot be replaced as a side effect of a routine emulator/core update.
+## One-button update
+
+The framebuffer UI has one update action:
+
+```text
+UPDATE EVERYTHING
+```
+
+One press updates every component that is actually outdated, in this order:
+
+```text
+CRT baseline
+Kodi
+RetroArch
+Cores
+CRT timings
+CRT verification
+```
+
+Steps that are already current are skipped. The stable manifest and each component updater still enforce their normal checks, SHA-256 validation and rollback rules. CRT timings are therefore included in the complete update, but only the OS4 Final 27 validated timings payload can be installed.
 
 ## RetroArch update safety
 
