@@ -25,16 +25,9 @@ From a root-capable shell:
 sudo bash "/roms/ports/RGB-PI Updater27/update.sh" setup-admin
 ```
 
-The setup script:
+The setup script creates `admin` with `/home/admin` when needed, sets the initial password only for a newly created account, adds available Raspberry Pi hardware-access groups, and installs a normal password-protected sudo rule. It does not install `NOPASSWD:ALL` and does not remove or rename the original OS4 account.
 
-- creates `admin` with home directory `/home/admin` when it does not already exist;
-- sets the initial password to `admin` only when creating the account;
-- adds available Raspberry Pi hardware-access groups;
-- installs a normal password-protected sudo rule for `admin`;
-- does not install `NOPASSWD:ALL`;
-- does not remove or rename the original OS4 account.
-
-If the account already exists, its password is left unchanged. To intentionally reset it to the project default:
+If `admin` already exists, its password is left unchanged. To intentionally reset it to the project default:
 
 ```bash
 sudo bash "/roms/ports/RGB-PI Updater27/data/setup_admin_user.sh" --reset-password
