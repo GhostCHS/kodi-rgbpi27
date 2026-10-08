@@ -1,0 +1,130 @@
+name: Build experimental RetroArch
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: RetroArch version without leading v
+        required: true
+        default: "1.22.2"
+
+permissions:
+  contents: read
+
+jobs:
+  build-arm64-bullseye:
+    name: ARM64 Bullseye / Pi 4
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: debian:bullseye
+
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            git \
+            pkg-config \
+            libasound2-dev \
+            libdrm-dev \
+            libegl1-mesa-dev \
+            libfreetype6-dev \
+            libgbm-dev \
+            libgles2-mesa-dev \
+            libudev-dev \
+            libusb-1.0-0-dev \
+            libxkbcommon-dev \
+            zlib1g-dev
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Fetch RetroArch source
+        shell: bash
+        env:
+          RA_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "v${RA_VERSION}" \
+            https://github.com/libretro/RetroArch.git /work/RetroArch
+
+      - name: Configure Pi 4 KMS / EGL / GLES build
+        shell: bash
+        working-directory: /work/RetroArch
+        run: |
+          set -euo pipefail
+          export CFLAGS="-O2 -pipe -mcpu=cortex-a72"
+          export CXXFLAGS="$CFLAGS"
+
+          ./configure \
+            --disable-videocore \
+            --disable-opengl1 \
+            --disable-x11 \
+            --disable-wayland \
+            --disable-vulkan \
+            --disable-pulse \
+            --disable-oss \
+            --enable-opengles \
+            --enable-opengles3 \
+            --enable-opengles3_1 \
+            --enable-kms \
+            --enable-egl \
+            --enable-alsa \
+            --enable-udev
+
+      - name: Build
+        shell: bash
+        working-directory: /work/RetroArch
+        run: |
+          set -euo pipefail
+          make -j"$(nproc)"
+
+      - name: Record build metadata
+        shell: bash
+        env:
+          RA_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p /work/package/retroarch
+          install -m 0755 /work/RetroArch/retroarch /work/package/retroarch/retroarch
+
+          /work/RetroArch/retroarch --features > /work/package/FEATURES.txt || true
+          ldd /work/RetroArch/retroarch > /work/package/LDD.txt || true
+
+          cat > /work/package/BUILDINFO.txt <<EOF
+          RetroArch=${RA_VERSION}
+          Target=RGB-Pi OS4 Final 27 experimental
+          Architecture=aarch64
+          BuildUserspace=Debian Bullseye
+          CPU=cortex-a72
+          Video=KMS+EGL+OpenGL ES
+          Audio=ALSA
+          Input=udev
+          Vulkan=disabled
+          X11=disabled
+          Wayland=disabled
+          Status=EXPERIMENTAL_NOT_CRT_VALIDATED
+          EOF
+
+          cd /work/package
+          tar -czf "/work/retroarch-rgbpi-${RA_VERSION}-experimental.tar.gz" .
+          sha256sum "/work/retroarch-rgbpi-${RA_VERSION}-experimental.tar.gz" \
+            > "/work/retroarch-rgbpi-${RA_VERSION}-experimental.tar.gz.sha256"
+          sha256sum /work/package/retroarch/retroarch \
+            > "/work/retroarch-${RA_VERSION}-binary.sha256"
+
+      - name: Upload experimental artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: retroarch-rgbpi-${{ inputs.version }}-experimental
+          path: |
+            /work/retroarch-rgbpi-${{ inputs.version }}-experimental.tar.gz
+            /work/retroarch-rgbpi-${{ inputs.version }}-experimental.tar.gz.sha256
+            /work/retroarch-${{ inputs.version }}-binary.sha256
+            /work/package/BUILDINFO.txt
+            /work/package/FEATURES.txt
+            /work/package/LDD.txt
+          if-no-files-found: error
+          retention-days: 30
