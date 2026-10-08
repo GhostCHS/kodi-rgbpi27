@@ -33,11 +33,11 @@ This keeps privilege escalation password-protected instead of granting permanent
 After booting RGB-Pi again, update actions can be started from SSH with:
 
 ```bash
-sudo bash "/media/sd/roms/ports/RGB-PI 27 Updater/update.sh" preflight
-sudo bash "/media/sd/roms/ports/RGB-PI 27 Updater/update.sh" kodi --update
-sudo bash "/media/sd/roms/ports/RGB-PI 27 Updater/update.sh" retroarch --update
-sudo bash "/media/sd/roms/ports/RGB-PI 27 Updater/update.sh" cores --update
-sudo bash "/media/sd/roms/ports/RGB-PI 27 Updater/update.sh" timings --update
+sudo bash "/roms/ports/RGB-PI Updater/update.sh" preflight
+sudo bash "/roms/ports/RGB-PI Updater/update.sh" kodi --update
+sudo bash "/roms/ports/RGB-PI Updater/update.sh" retroarch --update
+sudo bash "/roms/ports/RGB-PI Updater/update.sh" cores --update
+sudo bash "/roms/ports/RGB-PI Updater/update.sh" timings --update
 ```
 
 ## Ports-menu updates
