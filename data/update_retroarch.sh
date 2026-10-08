@@ -182,7 +182,7 @@ main() {
     fi
   fi
 
-  local tmpdir
+  local tmpdir backup_bin="" old_version="" had_version="NO"
   tmpdir="$(mktemp -d)"
 
   bar 62 "Extracting RetroArch package"
@@ -195,14 +195,46 @@ main() {
     exit 1
   fi
 
+  bar 78 "Creating rollback copy"
+  if [[ "$DRY_RUN" != "YES" && -f "$TARGET_BIN" ]]; then
+    backup_bin="$(mktemp "${DOWNLOAD_DIR}/retroarch.rollback.XXXXXX")"
+    cp -a "$TARGET_BIN" "$backup_bin"
+    if [[ -f "$VERSION_FILE" ]]; then
+      old_version="$(cat "$VERSION_FILE")"
+      had_version="YES"
+    fi
+    log "$LOG_FILE" "Rollback copy created: $backup_bin"
+  fi
+
+  restore_previous_retroarch() {
+    if [[ -n "$backup_bin" && -f "$backup_bin" ]]; then
+      install -m 0755 "$backup_bin" "$TARGET_BIN"
+      if [[ "$had_version" == "YES" ]]; then
+        printf '%s\n' "$old_version" > "$VERSION_FILE"
+      else
+        rm -f "$VERSION_FILE"
+      fi
+      log "$LOG_FILE" "Previous RetroArch binary restored after failed update"
+    fi
+  }
+
   bar 82 "Installing RetroArch binary only (configs/timings untouched)"
-  run_cmd "$LOG_FILE" "$DRY_RUN" "install -m 0755 '$tmpdir/retroarch/retroarch' '$TARGET_BIN'"
+  if ! run_cmd "$LOG_FILE" "$DRY_RUN" "install -m 0755 '$tmpdir/retroarch/retroarch' '$TARGET_BIN'"; then
+    line
+    restore_previous_retroarch
+    rm -rf "$tmpdir"
+    rm -f "$backup_bin"
+    log "$LOG_FILE" "ERROR: RetroArch installation failed; rollback attempted"
+    exit 1
+  fi
 
   bar 92 "Checking CRT runtime compatibility"
   if [[ "$DRY_RUN" != "YES" ]] && ! validate_installed_binary "$LOG_FILE"; then
     line
+    restore_previous_retroarch
     rm -rf "$tmpdir"
-    log "$LOG_FILE" "ERROR: installed RetroArch failed CRT/runtime validation; no rollback backup is configured"
+    rm -f "$backup_bin"
+    log "$LOG_FILE" "ERROR: installed RetroArch failed CRT/runtime validation; previous binary restored"
     exit 1
   fi
 
@@ -210,6 +242,7 @@ main() {
   run_cmd "$LOG_FILE" "$DRY_RUN" "printf '%s\n' '$available' > '$VERSION_FILE'"
 
   rm -rf "$tmpdir"
+  rm -f "$backup_bin"
   bar 100 "RetroArch update complete"
   line
   log "$LOG_FILE" "RetroArch update finished"
