@@ -81,7 +81,7 @@ main() {
   if [[ -n "$filename" && -f "${ASSET_ROOT}/${filename}" ]]; then
     run_cmd "$LOG_FILE" "$DRY_RUN" "cp '${ASSET_ROOT}/${filename}' '$TMP_FILE'"
   else
-    run_cmd "$LOG_FILE" "$DRY_RUN" "curl -fL --retry 3 --connect-timeout 15 '$url' -o '$TMP_FILE'"
+    run_cmd "$LOG_FILE" "$DRY_RUN" "curl -fL --connect-timeout 15 '$url' -o '$TMP_FILE'"
   fi
   if [[ -n "$checksum" && "$checksum" != "unknown" ]]; then
     local actual
