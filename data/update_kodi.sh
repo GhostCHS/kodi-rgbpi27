@@ -157,7 +157,7 @@ fetch_asset() {
   if use_local_asset "$filename"; then
     run_cmd "$log_file" "$dry_run" "cp '${ASSET_ROOT}/${filename}' '$destination'"
   elif [[ -n "$url" ]]; then
-    run_cmd "$log_file" "$dry_run" "curl -fL --connect-timeout 15 '$url' -o '$destination'"
+    download_to_file "$log_file" "$dry_run" "$url" "$destination"
   else
     line
     log "$log_file" "ERROR: missing source for asset '$asset_key'"
