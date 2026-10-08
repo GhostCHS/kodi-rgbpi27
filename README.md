@@ -72,6 +72,18 @@ The minimal launcher downloads the current text runtime from this repository on 
 
 ### Maintenance account
 
+The preferred maintenance login for RGB-Pi Updater27 is `admin` with the initial password `admin`. Change it after the first login with `passwd`.
+
+On an existing stock OS4 installation, create/prepare the account once from a root-capable shell:
+
+```bash
+sudo bash "/roms/ports/RGB-PI Updater27/update.sh" setup-admin
+```
+
+The setup does **not** rename or delete the original RGB-Pi account, because OS4 components may still reference it internally.
+
+### Maintenance account
+
 The preferred maintenance login for RGB-Pi Updater27 is:
 
 ```text
