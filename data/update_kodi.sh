@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Manifest-driven Kodi updater for RGB-Pi.
 
-set -u
+set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DATA_ROOT="${DATA_ROOT:-$SCRIPT_DIR}"
@@ -157,7 +157,7 @@ fetch_asset() {
   if use_local_asset "$filename"; then
     run_cmd "$log_file" "$dry_run" "cp '${ASSET_ROOT}/${filename}' '$destination'"
   elif [[ -n "$url" ]]; then
-    run_cmd "$log_file" "$dry_run" "curl -fL --retry 3 --connect-timeout 15 '$url' -o '$destination'"
+    run_cmd "$log_file" "$dry_run" "curl -fL --connect-timeout 15 '$url' -o '$destination'"
   else
     line
     log "$log_file" "ERROR: missing source for asset '$asset_key'"

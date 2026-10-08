@@ -101,7 +101,7 @@ CRT timings
 CRT verification
 ```
 
-Each component checks its installed version and becomes a no-op when already current. Downloads are SHA-256 checked, then installed directly. There is no automatic component backup or rollback stage.
+Each component checks its installed version and becomes a no-op when already current. Downloads are SHA-256 checked, then installed directly. There is no automatic component backup or rollback stage. Each component gets one attempt: if a step exits with an error, it is logged as skipped and UPDATE EVERYTHING continues with the next component. Failed downloads are not retried. A step that does not finish within five minutes is terminated, logged as skipped, and the updater continues.
 
 ## RetroArch update safety
 

@@ -116,13 +116,13 @@ bootstrap_runtime() {
 
   url="${RAW_BASE}/manifest.json"
   tmp="${DATA_DIR}/.manifest.json.tmp"
-  curl -fsSL --retry 3 --connect-timeout 15 "$url" -o "$tmp"
+  curl -fsSL --connect-timeout 15 "$url" -o "$tmp"
   mv "$tmp" "${DATA_DIR}/manifest.json"
 
   for file in "${RUNTIME_FILES[@]}"; do
     url="${RAW_BASE}/data/${file}"
     tmp="${DATA_DIR}/.${file}.tmp"
-    curl -fsSL --retry 3 --connect-timeout 15 "$url" -o "$tmp"
+    curl -fsSL --connect-timeout 15 "$url" -o "$tmp"
     mv "$tmp" "${DATA_DIR}/${file}"
   done
   chmod +x "$DATA_DIR"/*.sh

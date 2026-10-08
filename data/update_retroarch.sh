@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Manifest-driven RetroArch updater for RGB-Pi.
 
-set -u
+set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DATA_ROOT="${DATA_ROOT:-$SCRIPT_DIR}"
@@ -169,7 +169,7 @@ main() {
   if [[ -n "$filename" && -f "${ASSET_ROOT}/${filename}" ]]; then
     run_cmd "$LOG_FILE" "$DRY_RUN" "cp '${ASSET_ROOT}/${filename}' '$ARCHIVE_PATH'"
   else
-    run_cmd "$LOG_FILE" "$DRY_RUN" "curl -fL --retry 3 --connect-timeout 15 '$url' -o '$ARCHIVE_PATH'"
+    run_cmd "$LOG_FILE" "$DRY_RUN" "curl -fL --connect-timeout 15 '$url' -o '$ARCHIVE_PATH'"
   fi
 
   if [[ -n "$checksum" && "$checksum" != "unknown" ]]; then

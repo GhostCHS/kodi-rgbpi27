@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import select
+import signal
 import subprocess
 import sys
 import time
@@ -36,6 +37,7 @@ BTN_BACK = 6
 BTN_START = 7
 COMBO_WINDOW_SECONDS = 0.35
 PROGRESS_RE = re.compile(r"\[(\d{1,3})%\]\s*\[[^\]]*\]\s*(.*)")
+UPDATE_STEP_TIMEOUT_SECONDS = int(os.environ.get("RGBPI_UPDATE_STEP_TIMEOUT", "300"))
 
 
 @dataclass
@@ -415,10 +417,13 @@ class MenuApp:
             ("CRT verification", ["env", *_runtime_env_args(), "bash", str(CRT_GUARD_SCRIPT), "--strict"]),
         ]
 
-        rc = self.run_commands_with_progress(steps, UPDATE_ALL_LOG)
+        failed_count = self.run_commands_with_progress(steps, UPDATE_ALL_LOG)
         self.refresh()
-        self.set_notice("Everything updated" if rc == 0 else f"Update failed ({rc})", 3.0)
-        return rc
+        if failed_count == 0:
+            self.set_notice("Everything updated", 3.0)
+        else:
+            self.set_notice(f"Done - skipped {failed_count} failed step(s)", 4.0)
+        return 0
 
     def run_system_action(self, script: Path, success_notice: str) -> int:
         self.draw_loading("Applying system change...")
@@ -456,22 +461,42 @@ class MenuApp:
 
     def run_commands_with_progress(self, steps: list[tuple[str, list[str]]], log_path: Path) -> int:
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        failed_steps: list[tuple[str, int]] = []
+
         with log_path.open("w", encoding="utf-8") as log_handle:
             for index, (name, command) in enumerate(steps):
                 log_handle.write(f"== {name} ==\n")
-                rc = self.run_command_with_progress(
-                    command,
-                    title="UPDATE EVERYTHING",
-                    status=f"Step {index + 1}/{len(steps)}: {name}",
-                    step_index=index,
-                    step_total=len(steps),
-                    log_handle=log_handle,
-                )
+                log_handle.flush()
+
+                try:
+                    rc = self.run_command_with_progress(
+                        command,
+                        title="UPDATE EVERYTHING",
+                        status=f"Step {index + 1}/{len(steps)}: {name}",
+                        step_index=index,
+                        step_total=len(steps),
+                        log_handle=log_handle,
+                    )
+                except Exception as exc:
+                    rc = 127
+                    log_handle.write(f"ERROR: {name}: {exc}\n")
+
+                if rc != 0:
+                    failed_steps.append((name, rc))
+                    log_handle.write(f"SKIPPED AFTER ERROR: {name} (exit {rc})\n")
+                else:
+                    log_handle.write(f"OK: {name}\n")
+
                 log_handle.write("\n")
                 log_handle.flush()
-                if rc != 0:
-                    return rc
-        return 0
+
+            if failed_steps:
+                log_handle.write("== SUMMARY ==\n")
+                for name, rc in failed_steps:
+                    log_handle.write(f"SKIPPED: {name} (exit {rc})\n")
+                log_handle.flush()
+
+        return len(failed_steps)
 
     def run_command_with_progress(
         self,
@@ -486,6 +511,7 @@ class MenuApp:
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            start_new_session=True,
         )
         assert proc.stdout is not None
         fd = proc.stdout.fileno()
@@ -529,6 +555,23 @@ class MenuApp:
 
             elapsed = now - started_at
             output_age = max(0, int(now - last_output_at))
+
+            if elapsed >= UPDATE_STEP_TIMEOUT_SECONDS and proc.poll() is None:
+                if log_handle is not None:
+                    log_handle.write(
+                        f"ERROR: step timed out after {UPDATE_STEP_TIMEOUT_SECONDS}s; skipping\n"
+                    )
+                    log_handle.flush()
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                    proc.wait(timeout=3)
+                except Exception:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except Exception:
+                        pass
+                return 124
+
             spin = spinner[int(elapsed * 4) % len(spinner)]
             activity = f"{spin} {cpu_state}  elapsed {format_elapsed(elapsed)}  output {output_age}s ago"
 
