@@ -1,0 +1,60 @@
+name: Check upstream versions
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Compare stable upstream versions
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json
+          import os
+          import urllib.request
+          from pathlib import Path
+
+          manifest = json.loads(Path("manifest.json").read_text(encoding="utf-8"))
+
+          def latest(repo):
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}/releases/latest",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  return json.load(response)["tag_name"]
+
+          retroarch = latest("libretro/RetroArch").lstrip("v")
+          kodi = latest("xbmc/xbmc")
+
+          recorded_ra = manifest.get("upstream", {}).get("retroarch_stable", "")
+          recorded_kodi = manifest.get("upstream", {}).get("kodi_stable", "")
+
+          print(f"RetroArch upstream: {retroarch} | manifest: {recorded_ra}")
+          print(f"Kodi upstream: {kodi} | manifest: {recorded_kodi}")
+
+          if retroarch != recorded_ra:
+              print(f"::warning::RetroArch stable changed: {recorded_ra} -> {retroarch}")
+          if kodi != recorded_kodi:
+              print(f"::warning::Kodi stable changed: {recorded_kodi} -> {kodi}")
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("## Upstream stable versions\n\n")
+              fh.write(f"- RetroArch: **{retroarch}** (manifest: {recorded_ra})\n")
+              fh.write(f"- Kodi: **{kodi}** (manifest: {recorded_kodi})\n")
+              fh.write("\nNew versions are informational until CRT validation is complete.\n")
