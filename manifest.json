@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "channel": "stable",
-  "updated_at": "2026-10-08T21:45:00Z",
+  "updated_at": "2026-10-08T22:05:00Z",
   "project": {
     "name": "RGB-Pi 27 Updater",
     "repository": "GhostCHS/kodi-rgbpi27"
@@ -21,7 +21,10 @@
     "firmware_updates": false,
     "full_distribution_upgrade": false,
     "crt_software_guard": true,
-    "retroarch_post_install_rollback_on_guard_failure": true
+    "retroarch_post_install_rollback_on_guard_failure": false,
+    "rollback_backups": false,
+    "straight_forward_updates": true,
+    "original_rgbpi_passwordless_sudo_bootstrap": true
   },
   "upstream": {
     "kodi_stable": "21.3-Omega",
