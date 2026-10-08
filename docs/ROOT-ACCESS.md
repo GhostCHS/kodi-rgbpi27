@@ -1,67 +1,79 @@
-# Root access on RGB-Pi OS4 Final 27
+# Maintenance account and root access on RGB-Pi OS4 Final 27
 
-RGB-Pi OS4 may intentionally restrict the `pi` account. On a stock Final 27 install, `sudo -l` can show only a small allow-list such as `fgconsole` and `chvt`.
+## Preferred account
 
-The updater does **not** try to bypass that policy.
-
-## Recommended: standard password-protected sudo
-
-If you want to maintain the appliance yourself, add a normal sudo rule from another Linux system while the RGB-Pi SD card is mounted.
-
-On the RGB-Pi root filesystem create:
+RGB-Pi Updater27 uses the following maintenance account convention:
 
 ```text
-/etc/sudoers.d/020_pi-standard
+username: admin
+initial password: admin
 ```
 
-with:
+Change the initial password after the first login:
+
+```bash
+passwd
+```
+
+The updater deliberately leaves the original RGB-Pi OS4 account in place. Renaming or deleting that account could break OS4 services, launch scripts, Kodi data paths or other software that still assumes the stock account exists.
+
+## Create the admin account
+
+From a root-capable shell:
+
+```bash
+sudo bash "/roms/ports/RGB-PI Updater27/update.sh" setup-admin
+```
+
+The setup script:
+
+- creates `admin` with home directory `/home/admin` when it does not already exist;
+- sets the initial password to `admin` only when creating the account;
+- adds available Raspberry Pi hardware-access groups;
+- installs a normal password-protected sudo rule for `admin`;
+- does not install `NOPASSWD:ALL`;
+- does not remove or rename the original OS4 account.
+
+If the account already exists, its password is left unchanged. To intentionally reset it to the project default:
+
+```bash
+sudo bash "/roms/ports/RGB-PI Updater27/data/setup_admin_user.sh" --reset-password
+```
+
+Change that temporary/default password immediately afterward.
+
+## Normal SSH maintenance
+
+After the account exists:
 
 ```text
-pi ALL=(ALL) ALL
+ssh admin@<rgbpi-ip>
+password: admin
 ```
 
-and permissions:
+Then change the password:
 
-```text
-0440
+```bash
+passwd
 ```
 
-Validate the file with `visudo -cf` when possible.
-
-This keeps privilege escalation password-protected instead of granting permanent unrestricted passwordless root.
-
-After booting RGB-Pi again, update actions can be started from SSH with:
+Update actions can be run with normal password-protected sudo:
 
 ```bash
 sudo bash "/roms/ports/RGB-PI Updater27/update.sh" preflight
+sudo bash "/roms/ports/RGB-PI Updater27/update.sh" crt-check
 sudo bash "/roms/ports/RGB-PI Updater27/update.sh" kodi --update
 sudo bash "/roms/ports/RGB-PI Updater27/update.sh" retroarch --update
 sudo bash "/roms/ports/RGB-PI Updater27/update.sh" cores --update
 sudo bash "/roms/ports/RGB-PI Updater27/update.sh" timings --update
 ```
 
-## Ports-menu updates
+## Ports-menu privilege note
 
-The graphical Ports launcher uses non-interactive sudo for update actions because entering a sudo password inside a 320x240 framebuffer UI is unreliable.
+The framebuffer menu cannot reliably prompt for a sudo password. Therefore status, Preflight and CRT checks work without root, while privileged update actions require either launching the updater itself from an already privileged context or using the SSH commands above.
 
-If `sudo -n true` fails, the GUI remains usable for status and preflight checks but will refuse installation actions.
+Updater27 intentionally does not weaken the machine with a global passwordless sudo rule just to make the menu able to elevate itself.
 
-A future release may ship a root-owned, narrowly scoped helper for graphical updates. Until that helper is audited, this fork deliberately does not write `NOPASSWD:ALL` automatically.
+## Why the stock account remains
 
-## Legacy unrestricted rule
-
-The upstream project used:
-
-```text
-pi ALL=(ALL) NOPASSWD:ALL
-```
-
-That works, but it gives every process running as `pi` unrestricted root access. This fork does not install that rule.
-
-If you deliberately choose it on a dedicated appliance, do so manually and understand the security trade-off.
-
-## Reverting
-
-Remove the custom sudoers file from the RGB-Pi root filesystem and reboot.
-
-Never edit `/etc/sudoers` directly with a normal text editor unless you have a recovery path. Prefer a file in `/etc/sudoers.d/`.
+RGB-Pi OS4 Final 27 is an appliance-style distribution. Some stock scripts and user data can still reference the original account. The preferred human maintenance account is `admin`, but compatibility takes priority over renaming internal OS identities.
