@@ -17,7 +17,7 @@ KODI_SCRIPT = DATA_DIR / "update_kodi.sh"
 RETROARCH_SCRIPT = DATA_DIR / "update_retroarch.sh"
 CORES_SCRIPT = DATA_DIR / "update_cores.sh"
 TIMINGS_SCRIPT = DATA_DIR / "update_timings.sh"
-ROOT_SCRIPT = DATA_DIR / "make_pi_root.sh"
+PREFLIGHT_SCRIPT = DATA_DIR / "preflight.sh"
 BOOTSTRAP_SCRIPT = DATA_DIR / "bootstrap_local_metadata.sh"
 
 KODI_LOG = Path("/var/log/kodi-updater/latest.log")
@@ -69,18 +69,31 @@ def use_bundled_manifest() -> bool:
     return os.environ.get("FORCE_BUNDLED_MANIFEST") == "YES" or all(path.exists() for path in BUNDLED_ASSETS)
 
 
-def sudo_script_command(script: Path, mode: str) -> list[str]:
-    command = ["sudo", "env", f"APP_ROOT={APP_ROOT}", f"DATA_ROOT={DATA_DIR}"]
+def _runtime_env_args() -> list[str]:
+    args = [f"APP_ROOT={APP_ROOT}", f"DATA_ROOT={DATA_DIR}"]
+    for key in ("REPO_OWNER", "REPO_NAME", "UPDATE_BRANCH"):
+        value = os.environ.get(key)
+        if value:
+            args.append(f"{key}={value}")
     if use_bundled_manifest():
-        command.append("FORCE_BUNDLED_MANIFEST=YES")
-    command.extend(["bash", str(script), mode])
-    return command
+        args.append("FORCE_BUNDLED_MANIFEST=YES")
+    return args
+
+
+def status_script_command(script: Path, mode: str) -> list[str]:
+    return ["env", *_runtime_env_args(), "bash", str(script), mode]
+
+
+def sudo_script_command(script: Path, mode: str) -> list[str]:
+    if os.geteuid() == 0:
+        return ["env", *_runtime_env_args(), "bash", str(script), mode]
+    return ["sudo", "-n", "env", *_runtime_env_args(), "bash", str(script), mode]
 
 
 def run_status(script: Path) -> Status:
     try:
         proc = subprocess.run(
-            sudo_script_command(script, "--status"),
+            status_script_command(script, "--status"),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -107,10 +120,10 @@ def run_action(script: Path) -> int:
 
 
 def run_script(script: Path, *args: str) -> int:
-    command = ["sudo", "env", f"APP_ROOT={APP_ROOT}", f"DATA_ROOT={DATA_DIR}"]
-    if use_bundled_manifest():
-        command.append("FORCE_BUNDLED_MANIFEST=YES")
-    command.extend(["bash", str(script), *args])
+    mode = args[0] if args else "--update"
+    command = sudo_script_command(script, mode)
+    if len(args) > 1:
+        command.extend(args[1:])
     return subprocess.call(command)
 
 
@@ -125,8 +138,19 @@ def read_log_tail(path: Path, max_lines: int = 11) -> list[str]:
     return tail or ["Log is empty."]
 
 
-def pi_root_enabled() -> bool:
-    return Path("/etc/sudoers.d/010_pi-nopasswd").exists()
+def root_access_ready() -> bool:
+    if os.geteuid() == 0:
+        return True
+    try:
+        return subprocess.run(
+            ["sudo", "-n", "true"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+            check=False,
+        ).returncode == 0
+    except Exception:
+        return False
 
 
 def ensure_runtime_env() -> None:
@@ -175,7 +199,7 @@ class MenuApp:
         pygame.font.init()
         self.pygame = pygame
         self.screen = pygame.display.set_mode(WINDOW_SIZE, pygame.FULLSCREEN)
-        pygame.display.set_caption("RGB-Pi Updater")
+        pygame.display.set_caption("RGB-Pi 27 Updater")
         pygame.mouse.set_visible(False)
 
         self.clock = pygame.time.Clock()
@@ -214,7 +238,7 @@ class MenuApp:
         if self.state == "main":
             return MenuState(
                 name="main",
-                title="RGB-PI UPDATER",
+                title="RGB-PI 27 UPDATER",
                 subtitle="KODI / RETROARCH / SYSTEM",
                 entries=[
                     MenuEntry("Kodi", lambda: self.open_state("kodi"), "action"),
@@ -256,13 +280,13 @@ class MenuApp:
             return MenuState("retroarch", "RETROARCH", "UPDATES / LOGS", entries)
         if self.state == "system":
             entries = [
-                MenuEntry(f"Pi Root: {'ENABLED' if pi_root_enabled() else 'OFF'}"),
-                MenuEntry("Make user Pi Root", lambda: self.run_system_action(ROOT_SCRIPT, "Pi root ready"), "action"),
+                MenuEntry(f"Root access: {'READY' if root_access_ready() else 'OFF'}"),
+                MenuEntry("Run Preflight", self.open_preflight, "action"),
                 MenuEntry("Bootstrap Metadata", lambda: self.run_system_action(BOOTSTRAP_SCRIPT, "Metadata refreshed"), "action"),
                 MenuEntry("View Bootstrap log", lambda: self.open_log("Bootstrap Log", BOOTSTRAP_LOG), "action"),
                 MenuEntry("Back", lambda: self.open_state("main"), "action"),
             ]
-            return MenuState("system", "SYSTEM", "PI / METADATA", entries)
+            return MenuState("system", "SYSTEM", "CHECKS / METADATA", entries)
         return MenuState("log", self.log_title, "B TO GO BACK", [MenuEntry(line) for line in self.log_lines] + [MenuEntry("Back", lambda: self.open_state("main"), "action")])
 
     def open_state(self, name: str) -> int:
@@ -275,6 +299,31 @@ class MenuApp:
     def open_log(self, title: str, path: Path) -> int:
         self.log_title = title
         self.log_lines = read_log_tail(path)
+        self.state = "log"
+        self.index = max(0, len(self.log_lines))
+        return 0
+
+    def open_preflight(self) -> int:
+        env = os.environ.copy()
+        env["APP_ROOT"] = str(APP_ROOT)
+        env["DATA_ROOT"] = str(DATA_DIR)
+        try:
+            proc = subprocess.run(
+                ["bash", str(PREFLIGHT_SCRIPT)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=15,
+                check=False,
+                env=env,
+            )
+            lines = proc.stdout.splitlines()
+            if proc.returncode not in (0, 2):
+                lines.append(f"Preflight exited with {proc.returncode}")
+        except Exception as exc:
+            lines = [f"Preflight failed: {exc}"]
+        self.log_title = "Preflight"
+        self.log_lines = lines or ["No preflight output."]
         self.state = "log"
         self.index = max(0, len(self.log_lines))
         return 0

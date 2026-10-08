@@ -1,0 +1,57 @@
+name: Validate updater
+
+on:
+  push:
+    branches:
+      - main
+      - modernize-2026
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n update.sh
+          for script in data/*.sh; do
+            bash -n "$script"
+          done
+
+      - name: Validate Python syntax
+        run: python3 -m py_compile data/*.py
+
+      - name: Validate manifest JSON
+        run: python3 -m json.tool manifest.json >/dev/null
+
+      - name: Validate manifest schema
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("manifest.json").read_text(encoding="utf-8"))
+          assert manifest["schema_version"] >= 2
+          assert manifest["channel"] in {"stable", "preview", "latest"}
+
+          required = {"kodi", "kodi_joystick", "retroarch", "cores", "timings"}
+          assets = manifest["assets"]
+          missing = required - assets.keys()
+          assert not missing, f"missing assets: {sorted(missing)}"
+
+          for name in sorted(required):
+              asset = assets[name]
+              assert asset.get("version"), f"{name}: missing version"
+              assert asset.get("filename"), f"{name}: missing filename"
+              assert asset.get("url"), f"{name}: missing URL"
+              digest = asset.get("sha256", "")
+              assert len(digest) == 64, f"{name}: invalid sha256"

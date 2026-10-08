@@ -5,17 +5,14 @@ APP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DATA_DIR="${APP_DIR}/data"
 LOG_DIR="${APP_DIR}/logs"
 LOG_FILE="${LOG_DIR}/launcher.log"
-REPO_OWNER="${REPO_OWNER:-joeblack2k}"
-REPO_NAME="${REPO_NAME:-kodi-rgbpi}"
+REPO_OWNER="${REPO_OWNER:-GhostCHS}"
+REPO_NAME="${REPO_NAME:-kodi-rgbpi27}"
 UPDATE_BRANCH="${UPDATE_BRANCH:-main}"
 RAW_BASE="${RAW_BASE:-https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${UPDATE_BRANCH}}"
-ACTIVE_TTY="${ACTIVE_TTY:-$(cat /sys/class/tty/tty0/active 2>/dev/null | tr -d '[:space:]')}"
-ACTIVE_TTY="${ACTIVE_TTY:-tty1}"
-DEFAULT_PI_USER="${DEFAULT_PI_USER:-pi}"
-DEFAULT_PI_PASSWORD="${DEFAULT_PI_PASSWORD:-rgbpi}"
 
 RUNTIME_FILES=(
   common.sh
+  preflight.sh
   update_kodi.sh
   update_retroarch.sh
   update_cores.sh
@@ -23,8 +20,6 @@ RUNTIME_FILES=(
   bootstrap_local_metadata.sh
   mount_all.sh
   rgbpi_update_menu.py
-  make_pi_root.sh
-  ensure_pi_sudo.sh
 )
 
 mkdir -p "$LOG_DIR"
@@ -36,6 +31,7 @@ bundled_mode_ready() {
 export_runtime_env() {
   export APP_ROOT="$APP_DIR"
   export DATA_ROOT="$DATA_DIR"
+  export REPO_OWNER REPO_NAME UPDATE_BRANCH RAW_BASE
   export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
   export PYTHONUNBUFFERED=1
@@ -45,54 +41,6 @@ export_runtime_env() {
   if bundled_mode_ready; then
     export FORCE_BUNDLED_MANIFEST=YES
   fi
-}
-
-sudo_env_args() {
-  printf '%s\0' \
-    "APP_ROOT=$APP_ROOT" \
-    "DATA_ROOT=$DATA_ROOT" \
-    "FORCE_BUNDLED_MANIFEST=${FORCE_BUNDLED_MANIFEST:-NO}" \
-    "SDL_AUDIODRIVER=$SDL_AUDIODRIVER" \
-    "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" \
-    "PYTHONUNBUFFERED=$PYTHONUNBUFFERED" \
-    "SDL_VIDEODRIVER=$SDL_VIDEODRIVER" \
-    "SDL_FBDEV=$SDL_FBDEV" \
-    "SDL_NOMOUSE=$SDL_NOMOUSE"
-}
-
-show_reboot_required_message() {
-  clear >/dev/null 2>&1 || true
-  cat <<'EOF'
-RGB-PI UPDATER
-
-First-run system setup is complete.
-
-Passwordless sudo for user pi was enabled automatically.
-Reboot RGB-Pi now.
-After reboot, launch the updater again and continue with the updates.
-
-Press ENTER or wait 15 seconds.
-EOF
-  read -r -t 15 _ || true
-}
-
-show_sudo_bootstrap_failed_message() {
-  clear >/dev/null 2>&1 || true
-  cat <<EOF
-RGB-PI UPDATER
-
-Automatic first-run sudo setup failed.
-
-This updater expects the stock ${DEFAULT_PI_USER} password on a clean OS4 image.
-If you changed it, run this once from shell:
-
-  sudo bash "${APP_DIR}/update.sh" root
-
-Then reboot RGB-Pi and launch the updater again.
-
-Press ENTER or wait 20 seconds.
-EOF
-  read -r -t 20 _ || true
 }
 
 runtime_complete() {
@@ -106,12 +54,12 @@ runtime_complete() {
 bootstrap_runtime() {
   mkdir -p "$DATA_DIR"
   local file url tmp
-  for file in manifest.json; do
-    url="${RAW_BASE}/${file}"
-    tmp="${DATA_DIR}/.${file}.tmp"
-    curl -fsSL --retry 3 --connect-timeout 15 "$url" -o "$tmp"
-    mv "$tmp" "${DATA_DIR}/${file}"
-  done
+
+  url="${RAW_BASE}/manifest.json"
+  tmp="${DATA_DIR}/.manifest.json.tmp"
+  curl -fsSL --retry 3 --connect-timeout 15 "$url" -o "$tmp"
+  mv "$tmp" "${DATA_DIR}/manifest.json"
+
   for file in "${RUNTIME_FILES[@]}"; do
     url="${RAW_BASE}/data/${file}"
     tmp="${DATA_DIR}/.${file}.tmp"
@@ -123,43 +71,36 @@ bootstrap_runtime() {
 
 ensure_runtime() {
   runtime_complete && return 0
-  echo "Bootstrapping updater runtime into $DATA_DIR" >>"$LOG_FILE"
+  printf 'Bootstrapping updater runtime from %s/%s (%s)\n' "$REPO_OWNER" "$REPO_NAME" "$UPDATE_BRANCH" >>"$LOG_FILE"
   bootstrap_runtime
 }
 
-ensure_passwordless_sudo_or_exit() {
-  local env_args=()
-  local current_user
-
+root_command_prefix() {
   if [[ "$EUID" -eq 0 ]]; then
+    printf '%s\0' /usr/bin/env
     return 0
   fi
-
   if sudo -n true >/dev/null 2>&1; then
+    printf '%s\0' sudo -n /usr/bin/env
     return 0
   fi
+  return 1
+}
 
-  current_user="$(id -un 2>/dev/null || true)"
-  if [[ "$current_user" != "$DEFAULT_PI_USER" ]]; then
-    echo "Passwordless sudo missing for $current_user and automatic bootstrap is limited to ${DEFAULT_PI_USER}." >>"$LOG_FILE"
-    show_sudo_bootstrap_failed_message
-    exit 1
-  fi
+show_root_required_message() {
+  cat <<'EOF'
+RGB-PI 27 UPDATER
 
-  echo "Passwordless sudo missing; attempting automatic first-run bootstrap." >>"$LOG_FILE"
-  while IFS= read -r -d '' arg; do
-    env_args+=("$arg")
-  done < <(sudo_env_args)
+Installing updates needs root privileges.
 
-  if printf '%s\n' "$DEFAULT_PI_PASSWORD" | sudo -S -p '' /usr/bin/env "${env_args[@]}" bash "$DATA_DIR/make_pi_root.sh" >>"$LOG_FILE" 2>&1; then
-    echo "Automatic first-run sudo bootstrap completed; reboot required." >>"$LOG_FILE"
-    show_reboot_required_message
-    exit 0
-  fi
+This fork no longer guesses the stock RGB-Pi password and no longer writes
+"pi ALL=(ALL) NOPASSWD:ALL" automatically.
 
-  echo "Automatic first-run sudo bootstrap failed." >>"$LOG_FILE"
-  show_sudo_bootstrap_failed_message
-  exit 1
+RGB-Pi OS4 Final 27 may deliberately restrict sudo for user "pi".
+Status checks and Preflight still work without root.
+
+See docs/ROOT-ACCESS.md in the repository for the supported bootstrap options.
+EOF
 }
 
 sudo_exec_script() {
@@ -167,50 +108,53 @@ sudo_exec_script() {
   shift || true
   ensure_runtime
   export_runtime_env
-  ensure_passwordless_sudo_or_exit
-  local env_args=()
-  while IFS= read -r -d '' arg; do
-    env_args+=("$arg")
-  done < <(sudo_env_args)
-  exec sudo /usr/bin/env \
-    "${env_args[@]}" \
+
+  local prefix=()
+  while IFS= read -r -d '' item; do
+    prefix+=("$item")
+  done < <(root_command_prefix || true)
+
+  if (("${#prefix[@]}" == 0)); then
+    show_root_required_message
+    exit 77
+  fi
+
+  exec "${prefix[@]}" \
+    "APP_ROOT=$APP_ROOT" \
+    "DATA_ROOT=$DATA_DIR" \
+    "REPO_OWNER=$REPO_OWNER" \
+    "REPO_NAME=$REPO_NAME" \
+    "UPDATE_BRANCH=$UPDATE_BRANCH" \
+    "FORCE_BUNDLED_MANIFEST=${FORCE_BUNDLED_MANIFEST:-NO}" \
+    "SDL_AUDIODRIVER=$SDL_AUDIODRIVER" \
+    "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" \
+    "PYTHONUNBUFFERED=$PYTHONUNBUFFERED" \
+    "SDL_VIDEODRIVER=$SDL_VIDEODRIVER" \
+    "SDL_FBDEV=$SDL_FBDEV" \
+    "SDL_NOMOUSE=$SDL_NOMOUSE" \
     bash "$script" "$@"
 }
 
 launch_menu() {
   ensure_runtime
   export_runtime_env
-  ensure_passwordless_sudo_or_exit
-  CURRENT_TTY="$(readlink -f /proc/self/fd/0 2>/dev/null || true)"
-  if [[ "$EUID" -ne 0 || "$CURRENT_TTY" != "/dev/${ACTIVE_TTY}" ]]; then
-    local env_args=()
-    while IFS= read -r -d '' arg; do
-      env_args+=("$arg")
-    done < <(sudo_env_args)
-    exec sudo /usr/bin/env \
-      ACTIVE_TTY="$ACTIVE_TTY" \
-      "${env_args[@]}" \
-      bash -lc 'exec </dev/"$ACTIVE_TTY" >/dev/"$ACTIVE_TTY" 2>&1; exec "$0" __menu_internal "$@"' \
-      "$APP_DIR/update.sh" "$@"
-  fi
-
   cd "$APP_DIR"
   exec python3 "$DATA_DIR/rgbpi_update_menu.py" "$@" >>"$LOG_FILE" 2>&1
 }
 
 case "${1:-}" in
-  __menu_internal)
-    shift
-    launch_menu "$@"
-    ;;
   --bootstrap-runtime)
     bootstrap_runtime
     ;;
   --dump-status|--terminal)
     ensure_runtime
     export_runtime_env
-    ensure_passwordless_sudo_or_exit
     exec python3 "$DATA_DIR/rgbpi_update_menu.py" "$@"
+    ;;
+  preflight)
+    ensure_runtime
+    export_runtime_env
+    exec bash "$DATA_DIR/preflight.sh"
     ;;
   kodi)
     shift
@@ -228,10 +172,6 @@ case "${1:-}" in
     shift
     sudo_exec_script "$DATA_DIR/update_timings.sh" "${1:---update}"
     ;;
-  root|make-root|pi-root)
-    shift
-    sudo_exec_script "$DATA_DIR/make_pi_root.sh" "$@"
-    ;;
   bootstrap)
     shift
     sudo_exec_script "$DATA_DIR/bootstrap_local_metadata.sh" "$@"
@@ -240,22 +180,26 @@ case "${1:-}" in
     shift
     sudo_exec_script "$DATA_DIR/mount_all.sh" "$@"
     ;;
+  root|make-root|pi-root)
+    show_root_required_message
+    exit 77
+    ;;
   "")
     launch_menu
     ;;
   *)
     cat <<USAGE
 Usage:
-  ./update.sh                     Launch RGB-Pi updater menu
+  ./update.sh                       Launch RGB-Pi 27 updater menu
+  ./update.sh preflight             Check OS4 / Pi / architecture compatibility
   ./update.sh kodi [--status|--update]
   ./update.sh retroarch [--status|--update]
   ./update.sh cores [--status|--update]
   ./update.sh timings [--status|--update]
-  ./update.sh root               Install passwordless sudo for pi
-  ./update.sh bootstrap          Seed local version markers
-  ./update.sh mount [args...]    Run NAS mount helper
-  ./update.sh --dump-status      Print updater status summary
-  ./update.sh --bootstrap-runtime Download the data/ runtime from GitHub
+  ./update.sh bootstrap             Seed local version markers (root required)
+  ./update.sh mount [args...]       Run NAS mount helper (root required)
+  ./update.sh --dump-status         Print updater status summary
+  ./update.sh --bootstrap-runtime   Download the runtime from GitHub
 USAGE
     exit 1
     ;;

@@ -29,7 +29,12 @@ parse_args() {
 
 main() {
   parse_args "${1:-}"
-  require_root
+  if [[ "$MODE" == "status" && "$(id -u)" -ne 0 ]]; then
+    LOG_FILE="${APP_ROOT}/logs/status-retroarch.log"
+    LOG_DIR="${APP_ROOT}/logs/status-retroarch"
+  else
+    require_root
+  fi
   mkdir -p "$DOWNLOAD_DIR" "$(dirname "$LOG_FILE")"
   touch "$LOG_FILE"
   set_run_log "$LOG_DIR"
