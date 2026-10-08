@@ -187,7 +187,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(sed -n 's/^RetroArch=//p' dist/BUILDINFO.txt | head -n1)"
+          version="$(sed -n 's/^RetroArch=//p' dist/package/BUILDINFO.txt | head -n1)"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
             echo "Could not resolve RetroArch version" >&2
             exit 1
@@ -218,10 +218,10 @@ jobs:
             "dist/retroarch-rgbpi-${RA_VERSION}-experimental.tar.gz"
             "dist/retroarch-rgbpi-${RA_VERSION}-experimental.tar.gz.sha256"
             "dist/retroarch-${RA_VERSION}-binary.sha256"
-            "dist/BUILDINFO.txt"
-            "dist/FEATURES.txt"
-            "dist/LDD.txt"
-            "dist/VERSION-INFO.txt"
+            "dist/package/BUILDINFO.txt"
+            "dist/package/FEATURES.txt"
+            "dist/package/LDD.txt"
+            "dist/package/VERSION-INFO.txt"
           )
 
           if gh release view "$RA_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
