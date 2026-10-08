@@ -10,7 +10,6 @@ APP_ROOT="${APP_ROOT:-$(cd -- "${DATA_ROOT}/.." && pwd)}"
 
 DOWNLOAD_DIR="${DATA_ROOT}/debs"
 ARCHIVE_PATH="${DOWNLOAD_DIR}/cores.tar.gz"
-BACKUP_ROOT="/opt/backups/agents/retroarch-cores"
 LOG_FILE="/var/log/retroarch-cores-update.log"
 LOG_DIR="/var/log/retroarch-cores-updater"
 CORES_DIR="/opt/retroarch/cores"
@@ -78,9 +77,7 @@ main() {
     exit 0
   fi
 
-  local ts backup tmpdir
-  ts="$(date +%F_%H%M%S)"
-  backup="${BACKUP_ROOT}/${ts}"
+  local tmpdir
   tmpdir="$(mktemp -d)"
 
   bar 28 "Downloading core bundle"
@@ -94,11 +91,6 @@ main() {
     actual="$(sha256_file "$ARCHIVE_PATH")"
     [[ "$actual" == "$checksum" ]] || { line; log "$LOG_FILE" "ERROR: checksum mismatch for core bundle"; exit 1; }
   fi
-
-  bar 45 "Creating rollback backup"
-  run_cmd "$LOG_FILE" "$DRY_RUN" "mkdir -p '$backup'"
-  run_cmd "$LOG_FILE" "$DRY_RUN" "cp -a '$CORES_DIR' '$backup/'"
-  log "$LOG_FILE" "backup=$backup"
 
   bar 65 "Extracting core bundle"
   run_cmd "$LOG_FILE" "$DRY_RUN" "tar -xzf '$ARCHIVE_PATH' -C '$tmpdir'"
@@ -116,9 +108,7 @@ main() {
   bar 94 "Validating core directory"
   if [[ ! -f "$CORES_DIR/fbneo_libretro.so" ]]; then
     line
-    log "$LOG_FILE" "ERROR: validation failed, restoring backup"
-    rm -rf "$CORES_DIR"
-    cp -a "$backup/cores" "$CORES_DIR"
+    log "$LOG_FILE" "ERROR: validation failed after core installation"
     rm -rf "$tmpdir"
     exit 1
   fi
