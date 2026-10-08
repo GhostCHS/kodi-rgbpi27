@@ -127,6 +127,51 @@ def run_script(script: Path, *args: str) -> int:
     return subprocess.call(command)
 
 
+def process_tree_cpu_ticks(root_pid: int) -> int:
+    """Return accumulated user+system CPU ticks for a process and its descendants."""
+    processes: dict[int, tuple[int, int]] = {}
+    try:
+        proc_entries = list(Path("/proc").iterdir())
+    except OSError:
+        return 0
+
+    for entry in proc_entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            raw = (entry / "stat").read_text(encoding="utf-8", errors="replace")
+            close = raw.rfind(")")
+            if close < 0:
+                continue
+            fields = raw[close + 2 :].split()
+            pid = int(entry.name)
+            ppid = int(fields[1])
+            ticks = int(fields[11]) + int(fields[12])
+            processes[pid] = (ppid, ticks)
+        except (OSError, ValueError, IndexError):
+            continue
+
+    descendants = {root_pid}
+    changed = True
+    while changed:
+        changed = False
+        for pid, (ppid, _ticks) in processes.items():
+            if pid not in descendants and ppid in descendants:
+                descendants.add(pid)
+                changed = True
+
+    return sum(processes.get(pid, (0, 0))[1] for pid in descendants)
+
+
+def format_elapsed(seconds: float) -> str:
+    total = max(0, int(seconds))
+    minutes, secs = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
 def read_log_tail(path: Path, max_lines: int = 11) -> list[str]:
     if not path.exists():
         return ["Log not found."]
@@ -429,16 +474,24 @@ class MenuApp:
         buffer = ""
         percent = 0
         detail = "Starting..."
+        started_at = time.monotonic()
+        last_output_at = started_at
+        last_cpu_sample_at = started_at
+        last_cpu_ticks = process_tree_cpu_ticks(proc.pid)
+        cpu_state = "starting"
+        spinner = "|/-\\"
 
         while True:
             self.pygame.event.pump()
             ready, _, _ = select.select([proc.stdout], [], [], 0.05)
+            now = time.monotonic()
             if ready:
                 try:
                     chunk = os.read(fd, 4096)
                 except BlockingIOError:
                     chunk = b""
                 if chunk:
+                    last_output_at = now
                     text = chunk.decode("utf-8", errors="replace")
                     if log_handle is not None:
                         log_handle.write(text.replace("\r", "\n"))
@@ -448,7 +501,24 @@ class MenuApp:
                         segment, buffer = buffer.split("\n", 1)
                         percent, detail = self.parse_progress_segment(segment, percent, detail)
 
-            self.draw_progress(title, status, self.overall_progress(step_index, step_total, percent), detail)
+            if now - last_cpu_sample_at >= 1.0:
+                cpu_ticks = process_tree_cpu_ticks(proc.pid)
+                cpu_state = "CPU active" if cpu_ticks > last_cpu_ticks else "waiting / I-O"
+                last_cpu_ticks = cpu_ticks
+                last_cpu_sample_at = now
+
+            elapsed = now - started_at
+            output_age = max(0, int(now - last_output_at))
+            spin = spinner[int(elapsed * 4) % len(spinner)]
+            activity = f"{spin} {cpu_state}  elapsed {format_elapsed(elapsed)}  output {output_age}s ago"
+
+            self.draw_progress(
+                title,
+                status,
+                self.overall_progress(step_index, step_total, percent),
+                detail,
+                activity,
+            )
             self.clock.tick(FPS)
 
             if proc.poll() is not None and not ready:
@@ -460,7 +530,14 @@ class MenuApp:
         rc = proc.wait()
         final_percent = 100 if rc == 0 else percent
         final_detail = detail if rc == 0 else f"{detail} (failed)"
-        self.draw_progress(title, status, self.overall_progress(step_index, step_total, final_percent), final_detail)
+        final_activity = f"finished after {format_elapsed(time.monotonic() - started_at)}"
+        self.draw_progress(
+            title,
+            status,
+            self.overall_progress(step_index, step_total, final_percent),
+            final_detail,
+            final_activity,
+        )
         return rc
 
     def exit_app(self) -> int:
@@ -583,19 +660,21 @@ class MenuApp:
         self.blit(self.body_font, message, (68, 116), (176, 220, 255))
         self.pygame.display.flip()
 
-    def draw_progress(self, title: str, status: str, percent: int, detail: str) -> None:
+    def draw_progress(self, title: str, status: str, percent: int, detail: str, activity: str = "") -> None:
         self.screen.fill((6, 10, 22))
-        self.blit(self.title_font, title, (88, 52), (236, 246, 255))
-        self.blit(self.body_font, self.ellipsize(self.body_font, status, 250), (34, 86), (176, 220, 255))
+        self.blit(self.title_font, title, (88, 42), (236, 246, 255))
+        self.blit(self.body_font, self.ellipsize(self.body_font, status, 286), (18, 76), (176, 220, 255))
 
-        bar_outer = self.pygame.Rect(24, 124, 272, 20)
-        bar_inner = self.pygame.Rect(26, 126, max(0, int(268 * (percent / 100.0))), 16)
+        bar_outer = self.pygame.Rect(24, 112, 272, 20)
+        bar_inner = self.pygame.Rect(26, 114, max(0, int(268 * (percent / 100.0))), 16)
         self.pygame.draw.rect(self.screen, (16, 34, 74), bar_outer)
         self.pygame.draw.rect(self.screen, (92, 144, 206), bar_outer, 1)
         if bar_inner.width > 0:
             self.pygame.draw.rect(self.screen, (224, 242, 255), bar_inner)
-        self.blit(self.body_font, f"{percent}%", (136, 152), (236, 246, 255))
-        self.blit(self.small_font, self.ellipsize(self.small_font, detail, 286), (18, 186), (166, 204, 240))
+        self.blit(self.body_font, f"{percent}%", (136, 140), (236, 246, 255))
+        self.blit(self.small_font, self.ellipsize(self.small_font, detail, 294), (13, 171), (196, 224, 248))
+        if activity:
+            self.blit(self.tiny_font, self.ellipsize(self.tiny_font, activity, 294), (13, 199), (142, 190, 230))
         self.pygame.display.flip()
 
     def draw(self) -> None:
