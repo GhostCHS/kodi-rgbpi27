@@ -20,6 +20,7 @@ TIMINGS_SCRIPT = DATA_DIR / "update_timings.sh"
 PREFLIGHT_SCRIPT = DATA_DIR / "preflight.sh"
 BOOTSTRAP_SCRIPT = DATA_DIR / "bootstrap_local_metadata.sh"
 CRT_GUARD_SCRIPT = DATA_DIR / "crt_guard.sh"
+BASELINE_SCRIPT = DATA_DIR / "capture_crt_baseline.sh"
 
 KODI_LOG = Path("/var/log/kodi-updater/latest.log")
 RETROARCH_LOG = Path("/var/log/retroarch-updater/latest.log")
@@ -72,7 +73,7 @@ def use_bundled_manifest() -> bool:
 
 def _runtime_env_args() -> list[str]:
     args = [f"APP_ROOT={APP_ROOT}", f"DATA_ROOT={DATA_DIR}"]
-    for key in ("REPO_OWNER", "REPO_NAME", "UPDATE_BRANCH", "RGBPI_ADMIN_USER"):
+    for key in ("REPO_OWNER", "REPO_NAME", "UPDATE_BRANCH"):
         value = os.environ.get(key)
         if value:
             args.append(f"{key}={value}")
@@ -182,20 +183,6 @@ def read_log_tail(path: Path, max_lines: int = 11) -> list[str]:
         return [f"Could not read log: {exc}"]
     tail = lines[-max_lines:]
     return tail or ["Log is empty."]
-
-
-def admin_account_exists() -> bool:
-    user = os.environ.get("RGBPI_ADMIN_USER", "admin")
-    try:
-        return subprocess.run(
-            ["id", "-u", user],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=2,
-            check=False,
-        ).returncode == 0
-    except Exception:
-        return False
 
 
 def root_access_ready() -> bool:
@@ -340,10 +327,10 @@ class MenuApp:
             return MenuState("retroarch", "RETROARCH", "UPDATES / LOGS", entries)
         if self.state == "system":
             entries = [
-                MenuEntry(f"Admin user: {'READY' if admin_account_exists() else 'MISSING'}"),
                 MenuEntry(f"GUI root: {'READY' if root_access_ready() else 'OFF'}"),
                 MenuEntry("Run Preflight", self.open_preflight, "action"),
                 MenuEntry("Run CRT Check", self.open_crt_check, "action"),
+                MenuEntry("Capture CRT Baseline", self.capture_crt_baseline, "action"),
                 MenuEntry("Bootstrap Metadata", lambda: self.run_system_action(BOOTSTRAP_SCRIPT, "Metadata refreshed"), "action"),
                 MenuEntry("View Bootstrap log", lambda: self.open_log("Bootstrap Log", BOOTSTRAP_LOG), "action"),
                 MenuEntry("Back", lambda: self.open_state("main"), "action"),
@@ -412,6 +399,17 @@ class MenuApp:
         self.state = "log"
         self.index = max(0, len(self.log_lines))
         return 0
+
+    def capture_crt_baseline(self) -> int:
+        rc = self.run_command_with_progress(
+            ["env", *_runtime_env_args(), "bash", str(BASELINE_SCRIPT)],
+            title="PLEASE WAIT",
+            status="Capturing CRT baseline",
+            step_index=0,
+            step_total=1,
+        )
+        self.set_notice("CRT baseline captured" if rc == 0 else f"Baseline failed ({rc})", 3.0)
+        return rc
 
     def run_and_refresh(self, script: Path) -> int:
         rc = self.run_with_progress(script, "Running update...")
