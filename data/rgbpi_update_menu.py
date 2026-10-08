@@ -415,10 +415,13 @@ class MenuApp:
             ("CRT verification", ["env", *_runtime_env_args(), "bash", str(CRT_GUARD_SCRIPT), "--strict"]),
         ]
 
-        rc = self.run_commands_with_progress(steps, UPDATE_ALL_LOG)
+        failed_count = self.run_commands_with_progress(steps, UPDATE_ALL_LOG)
         self.refresh()
-        self.set_notice("Everything updated" if rc == 0 else f"Update failed ({rc})", 3.0)
-        return rc
+        if failed_count == 0:
+            self.set_notice("Everything updated", 3.0)
+        else:
+            self.set_notice(f"Done - skipped {failed_count} failed step(s)", 4.0)
+        return 0
 
     def run_system_action(self, script: Path, success_notice: str) -> int:
         self.draw_loading("Applying system change...")
@@ -456,22 +459,42 @@ class MenuApp:
 
     def run_commands_with_progress(self, steps: list[tuple[str, list[str]]], log_path: Path) -> int:
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        failed_steps: list[tuple[str, int]] = []
+
         with log_path.open("w", encoding="utf-8") as log_handle:
             for index, (name, command) in enumerate(steps):
                 log_handle.write(f"== {name} ==\n")
-                rc = self.run_command_with_progress(
-                    command,
-                    title="UPDATE EVERYTHING",
-                    status=f"Step {index + 1}/{len(steps)}: {name}",
-                    step_index=index,
-                    step_total=len(steps),
-                    log_handle=log_handle,
-                )
+                log_handle.flush()
+
+                try:
+                    rc = self.run_command_with_progress(
+                        command,
+                        title="UPDATE EVERYTHING",
+                        status=f"Step {index + 1}/{len(steps)}: {name}",
+                        step_index=index,
+                        step_total=len(steps),
+                        log_handle=log_handle,
+                    )
+                except Exception as exc:
+                    rc = 127
+                    log_handle.write(f"ERROR: {name}: {exc}\n")
+
+                if rc != 0:
+                    failed_steps.append((name, rc))
+                    log_handle.write(f"SKIPPED AFTER ERROR: {name} (exit {rc})\n")
+                else:
+                    log_handle.write(f"OK: {name}\n")
+
                 log_handle.write("\n")
                 log_handle.flush()
-                if rc != 0:
-                    return rc
-        return 0
+
+            if failed_steps:
+                log_handle.write("== SUMMARY ==\n")
+                for name, rc in failed_steps:
+                    log_handle.write(f"SKIPPED: {name} (exit {rc})\n")
+                log_handle.flush()
+
+        return len(failed_steps)
 
     def run_command_with_progress(
         self,
