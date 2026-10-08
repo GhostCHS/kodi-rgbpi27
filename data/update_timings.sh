@@ -81,7 +81,7 @@ main() {
   if [[ -n "$filename" && -f "${ASSET_ROOT}/${filename}" ]]; then
     run_cmd "$LOG_FILE" "$DRY_RUN" "cp '${ASSET_ROOT}/${filename}' '$TMP_FILE'"
   else
-    run_cmd "$LOG_FILE" "$DRY_RUN" "curl -fL --connect-timeout 15 '$url' -o '$TMP_FILE'"
+    download_to_file "$LOG_FILE" "$DRY_RUN" "$url" "$TMP_FILE"
   fi
   if [[ -n "$checksum" && "$checksum" != "unknown" ]]; then
     local actual
@@ -96,7 +96,7 @@ main() {
   fi
 
   bar 82 "Installing timings.dat"
-  run_cmd "$LOG_FILE" "$DRY_RUN" "install -m 0666 '$TMP_FILE' '$TARGET_FILE'"
+  run_cmd "$LOG_FILE" "$DRY_RUN" "install -m 0644 '$TMP_FILE' '$TARGET_FILE'"
   run_cmd "$LOG_FILE" "$DRY_RUN" "printf '%s\n' '$available' > '$VERSION_FILE'"
 
   bar 100 "timings.dat update complete"
