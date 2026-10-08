@@ -1,0 +1,47 @@
+name: Audit upstream bundled assets
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/audit-upstream-bundle.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download upstream self-contained bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://github.com/joeblack2k/kodi-rgbpi/releases/download/latest/RGB-PI-Updater.zip"
+          curl -fL --retry 2 --connect-timeout 15 --max-time 300 "$url" -o /tmp/updater.zip
+          sha256sum /tmp/updater.zip
+          test "$(sha256sum /tmp/updater.zip | awk '{print $1}')" = "de45bb651b3b455093689f1b59b4623606abb87fa5babeed79f0a6c68017ffd4"
+
+      - name: Locate and validate bundled joystick payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -l /tmp/updater.zip | tee /tmp/contents.txt
+          match="$(unzip -Z1 /tmp/updater.zip | grep -E '(^|/)kodi-omega-peripheral-joystick\.tar\.gz$' | head -n1)"
+          test -n "$match"
+          unzip -p /tmp/updater.zip "$match" > /tmp/kodi-omega-peripheral-joystick.tar.gz
+          test "$(sha256sum /tmp/kodi-omega-peripheral-joystick.tar.gz | awk '{print $1}')" = "1f2a13857e768e9c29b0ad61bd2a54ee806057a9359e23a5b39f5119fc63bd0a"
+          tar -tzf /tmp/kodi-omega-peripheral-joystick.tar.gz | head -100 | tee /tmp/joystick-contents.txt
+
+      - name: Upload recovered joystick payload for audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovered-kodi-joystick
+          path: |
+            /tmp/kodi-omega-peripheral-joystick.tar.gz
+            /tmp/contents.txt
+            /tmp/joystick-contents.txt
+          if-no-files-found: error
+          retention-days: 7
