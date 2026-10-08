@@ -2,11 +2,12 @@
 
 set -u
 
-REPO_OWNER="${REPO_OWNER:-joeblack2k}"
-REPO_NAME="${REPO_NAME:-kodi-rgbpi}"
+REPO_OWNER="${REPO_OWNER:-GhostCHS}"
+REPO_NAME="${REPO_NAME:-kodi-rgbpi27}"
+UPDATE_BRANCH="${UPDATE_BRANCH:-main}"
 RELEASE_TAG="${RELEASE_TAG:-latest}"
 MANIFEST_URL_PRIMARY="${MANIFEST_URL_PRIMARY-https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${RELEASE_TAG}/manifest.json}"
-MANIFEST_URL_FALLBACK="${MANIFEST_URL_FALLBACK-https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/manifest.json}"
+MANIFEST_URL_FALLBACK="${MANIFEST_URL_FALLBACK-https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${UPDATE_BRANCH}/manifest.json}"
 FORCE_BUNDLED_MANIFEST="${FORCE_BUNDLED_MANIFEST:-NO}"
 SCRIPT_DIR="${SCRIPT_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}"
 DATA_ROOT="${DATA_ROOT:-$SCRIPT_DIR}"
@@ -43,6 +44,7 @@ set_run_log() {
 
 log() {
   local log_file="$1"
+  shift
   local ts
   ts="$(date '+%F %T')"
   echo "[$ts] $*" | tee -a "$log_file" "$RUN_LOG"
@@ -59,8 +61,9 @@ run_cmd() {
 
 require_root() {
   if [[ "$(id -u)" -ne 0 ]]; then
-    echo "Run as root: sudo bash $0"
-    exit 1
+    echo "Root privileges are required for this update action."
+    echo "Run the updater with a permitted sudo/root setup; see docs/ROOT-ACCESS.md."
+    exit 77
   fi
 }
 
@@ -68,29 +71,67 @@ ensure_tooling() {
   local log_file="$1" dry_run="$2"
   local missing=()
   local cmd
-  for cmd in curl python3; do
+
+  for cmd in curl python3 sha256sum tar; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       missing+=("$cmd")
     fi
   done
-  if ((${#missing[@]} == 0)); then
+
+  if (("${#missing[@]}" == 0)); then
     return 0
   fi
-  run_cmd "$log_file" "$dry_run" "apt-get update -y >/dev/null"
+
+  if [[ "$(id -u)" -ne 0 ]]; then
+    log "$log_file" "ERROR: missing required tools: ${missing[*]}"
+    return 1
+  fi
+
+  run_cmd "$log_file" "$dry_run" "apt-get update >/dev/null"
   run_cmd "$log_file" "$dry_run" "apt-get install -y ${missing[*]} ca-certificates >/dev/null"
+}
+
+validate_manifest() {
+  local path="$1"
+  python3 - "$path" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+
+if data.get("channel") not in {"stable", "preview", "latest"}:
+    raise SystemExit("invalid manifest channel")
+
+assets = data.get("assets")
+if not isinstance(assets, dict):
+    raise SystemExit("manifest has no assets object")
+
+required = ("kodi", "kodi_joystick", "retroarch", "cores", "timings")
+for key in required:
+    item = assets.get(key)
+    if not isinstance(item, dict):
+        raise SystemExit(f"manifest missing asset: {key}")
+    if not item.get("version"):
+        raise SystemExit(f"manifest asset has no version: {key}")
+PY
 }
 
 fetch_manifest() {
   local log_file="$1" dry_run="$2"
   mkdir -p "$WORK_ROOT"
+
   if [[ "$dry_run" == "YES" ]]; then
     log "$log_file" "DRY-RUN: would fetch manifest to $MANIFEST_CACHE"
     cp "$BUNDLED_MANIFEST" "$MANIFEST_CACHE" 2>/dev/null || true
+    [[ -f "$MANIFEST_CACHE" ]] && validate_manifest "$MANIFEST_CACHE"
     return 0
   fi
 
   if [[ "$FORCE_BUNDLED_MANIFEST" == "YES" && -f "$BUNDLED_MANIFEST" ]]; then
     cp "$BUNDLED_MANIFEST" "$MANIFEST_CACHE"
+    validate_manifest "$MANIFEST_CACHE"
     log "$log_file" "manifest_source=$BUNDLED_MANIFEST (forced)"
     return 0
   fi
@@ -100,40 +141,71 @@ fetch_manifest() {
     now="$(date +%s)"
     cache_age=$((now - $(stat -c %Y "$MANIFEST_CACHE" 2>/dev/null || echo 0)))
     if ((cache_age >= 0 && cache_age < MANIFEST_CACHE_MAX_AGE)); then
-      log "$log_file" "manifest_source=$MANIFEST_CACHE (cached ${cache_age}s)"
-      return 0
+      if validate_manifest "$MANIFEST_CACHE" >/dev/null 2>&1; then
+        log "$log_file" "manifest_source=$MANIFEST_CACHE (cached ${cache_age}s)"
+        return 0
+      fi
+      rm -f "$MANIFEST_CACHE"
     fi
   fi
 
   if [[ -n "$MANIFEST_URL_PRIMARY" ]] && curl -fsSL --retry 3 --connect-timeout 15 "$MANIFEST_URL_PRIMARY" -o "$MANIFEST_CACHE"; then
-    log "$log_file" "manifest_source=$MANIFEST_URL_PRIMARY"
-    return 0
+    if validate_manifest "$MANIFEST_CACHE" >/dev/null 2>&1; then
+      log "$log_file" "manifest_source=$MANIFEST_URL_PRIMARY"
+      return 0
+    fi
+    rm -f "$MANIFEST_CACHE"
   fi
 
   if [[ -n "$MANIFEST_URL_FALLBACK" ]] && curl -fsSL --retry 3 --connect-timeout 15 "$MANIFEST_URL_FALLBACK" -o "$MANIFEST_CACHE"; then
-    log "$log_file" "manifest_source=$MANIFEST_URL_FALLBACK"
-    return 0
+    if validate_manifest "$MANIFEST_CACHE" >/dev/null 2>&1; then
+      log "$log_file" "manifest_source=$MANIFEST_URL_FALLBACK"
+      return 0
+    fi
+    rm -f "$MANIFEST_CACHE"
   fi
 
   if [[ -f "$BUNDLED_MANIFEST" ]]; then
     cp "$BUNDLED_MANIFEST" "$MANIFEST_CACHE"
+    validate_manifest "$MANIFEST_CACHE"
     log "$log_file" "manifest_source=$BUNDLED_MANIFEST"
     return 0
   fi
 
-  log "$log_file" "ERROR: unable to fetch manifest"
+  log "$log_file" "ERROR: unable to fetch a valid manifest"
   return 1
 }
 
 manifest_field() {
   local key="$1" field="$2"
   python3 - "$MANIFEST_CACHE" "$key" "$field" <<'PY'
-import json, sys
+import json
+import sys
+
 path, key, field = sys.argv[1:]
-with open(path, 'r', encoding='utf-8') as fh:
+with open(path, "r", encoding="utf-8") as fh:
     data = json.load(fh)
-value = data["assets"][key].get(field, "")
+value = data.get("assets", {}).get(key, {}).get(field, "")
+if value is None:
+    value = ""
 print(value)
+PY
+}
+
+manifest_top_field() {
+  local field="$1"
+  python3 - "$MANIFEST_CACHE" "$field" <<'PY'
+import json
+import sys
+
+path, field = sys.argv[1:]
+with open(path, "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+value = data.get(field, "")
+if isinstance(value, (dict, list)):
+    print(json.dumps(value, separators=(",", ":")))
+else:
+    print(value)
 PY
 }
 
@@ -156,8 +228,11 @@ compare_exact_update() {
 
 compare_pkg_update() {
   local installed="$1" available="$2"
-  if [[ "$installed" == "not-installed" ]]; then
+  if [[ "$installed" == "not-installed" || "$installed" == "unknown" || -z "$installed" ]]; then
     return 0
   fi
-  dpkg --compare-versions "$available" gt "$installed"
+  if command -v dpkg >/dev/null 2>&1 && dpkg --compare-versions "$available" gt "$installed" 2>/dev/null; then
+    return 0
+  fi
+  [[ "$installed" != "$available" ]]
 }
