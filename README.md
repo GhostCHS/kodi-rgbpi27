@@ -12,7 +12,6 @@ As of 2026-10-08:
 
 | Component | Upstream stable | RGB-Pi 27 stable channel |
 |---|---:|---:|
-| Kodi | 21.3 Omega | 21.3 RGB-Pi build |
 | RetroArch | 1.22.2 | 1.22.0-rgbpi1 until 1.22.2 passes real CRT validation |
 | Cores | rolling | validated bundle |
 | timings.dat | RGB-Pi-specific | validated OS4 Final 27 bundle |
@@ -88,18 +87,17 @@ A passing software guard is **not** proof of correct 15-kHz output. Real hardwar
 The framebuffer UI has one update action:
 
 ```text
-UPDATE EVERYTHING
+UPDATE ALL RETROARCH
 ```
 
-One press updates every component that is actually outdated, in this order:
+One press checks and updates only the RetroArch binary and RetroArch cores, in this order:
 
 ```text
-Kodi
 RetroArch
 Cores
-CRT timings
-CRT verification
 ```
+
+Kodi is not managed by this updater. CRT timings remain unchanged by UPDATE ALL RETROARCH; `./update.sh timings` is available separately. A manual CRT compatibility check is available with `./update.sh crt-check`.
 
 Each component checks its installed version and becomes a no-op when already current. Downloads are SHA-256 checked, then installed directly. There is no automatic component backup or rollback stage. Each component gets one attempt: if a step exits with an error, it is logged as skipped and UPDATE EVERYTHING continues with the next component. Failed downloads are not retried. A step that does not finish within five minutes is terminated, logged as skipped, and the updater continues.
 

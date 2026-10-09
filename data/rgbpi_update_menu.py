@@ -14,7 +14,6 @@ from typing import Callable, Optional
 
 DATA_DIR = Path(os.environ.get("DATA_ROOT", Path(__file__).resolve().parent))
 APP_ROOT = Path(os.environ.get("APP_ROOT", DATA_DIR.parent))
-KODI_SCRIPT = DATA_DIR / "update_kodi.sh"
 RETROARCH_SCRIPT = DATA_DIR / "update_retroarch.sh"
 CORES_SCRIPT = DATA_DIR / "update_cores.sh"
 TIMINGS_SCRIPT = DATA_DIR / "update_timings.sh"
@@ -22,15 +21,14 @@ PREFLIGHT_SCRIPT = DATA_DIR / "preflight.sh"
 BOOTSTRAP_SCRIPT = DATA_DIR / "bootstrap_local_metadata.sh"
 CRT_GUARD_SCRIPT = DATA_DIR / "crt_guard.sh"
 
-KODI_LOG = Path("/var/log/kodi-updater/latest.log")
 RETROARCH_LOG = Path("/var/log/retroarch-updater/latest.log")
 UPDATE_ALL_LOG = APP_ROOT / "logs" / "update-all.log"
 BOOTSTRAP_LOG = Path("/var/log/rgbpi-updater-bootstrap/latest.log")
 WINDOW_SIZE = (320, 240)
 BUNDLED_ASSETS = [
     DATA_DIR / "manifest.json",
-    DATA_DIR / "kodi.deb",
-    DATA_DIR / "kodi-omega-peripheral-joystick.tar.gz",
+    DATA_DIR / "retroarch-rgbpi.tar.gz",
+    DATA_DIR / "cores.tar.gz",
 ]
 FPS = 30
 BTN_BACK = 6
@@ -256,7 +254,6 @@ class MenuApp:
         self.small_font = pygame.font.Font(None, 14)
         self.tiny_font = pygame.font.Font(None, 12)
 
-        self.kodi = Status()
         self.retroarch = Status()
         self.cores = Status()
         self.timings = Status()
@@ -273,7 +270,6 @@ class MenuApp:
         self.refresh()
 
     def refresh(self) -> None:
-        self.kodi = run_status(KODI_SCRIPT)
         self.retroarch = run_status(RETROARCH_SCRIPT)
         self.cores = run_status(CORES_SCRIPT)
         self.timings = run_status(TIMINGS_SCRIPT)
@@ -291,7 +287,7 @@ class MenuApp:
                 subtitle="ONE-BUTTON UPDATE",
                 entries=[
                     MenuEntry(
-                        f"UPDATE EVERYTHING ({len(pending)})" if pending else "UPDATE EVERYTHING",
+                        f"UPDATE ALL RETROARCH ({len(pending)})" if pending else "UPDATE ALL RETROARCH",
                         self.run_update_all,
                         "action",
                     ),
@@ -304,14 +300,13 @@ class MenuApp:
         if self.state == "status":
             pending = self.all_pending_updates()
             entries = [
-                MenuEntry(f"Kodi: {self.kodi.installed} -> {self.kodi.available}"),
                 MenuEntry(f"RetroArch: {self.retroarch.installed} -> {self.retroarch.available}"),
                 MenuEntry(f"Cores: {self.cores.installed} -> {self.cores.available}"),
                 MenuEntry(f"Timings: {self.timings.installed} -> {self.timings.available}"),
                 MenuEntry(f"Pending: {', '.join(pending) if pending else 'none'}"),
                 MenuEntry("Back", lambda: self.open_state("main"), "action"),
             ]
-            return MenuState("status", "STATUS", "KODI / RETROARCH / CORES / TIMINGS", entries)
+            return MenuState("status", "STATUS", "RETROARCH / CORES / TIMINGS", entries)
         if self.state == "system":
             entries = [
                 MenuEntry(f"GUI root: {'READY' if root_access_ready() else 'OFF'}"),
@@ -394,27 +389,20 @@ class MenuApp:
 
     def all_pending_updates(self) -> list[str]:
         pending = []
-        if self.kodi.update_available:
-            pending.append("Kodi")
         if self.retroarch.update_available:
             pending.append("RetroArch")
         if self.cores.update_available:
             pending.append("Cores")
-        if self.timings.update_available:
-            pending.append("Timings")
         return pending
 
     def run_update_all(self) -> int:
         if not root_access_ready():
-            self.set_notice("Root required for UPDATE EVERYTHING", 4.0)
+            self.set_notice("Root required for UPDATE ALL RETROARCH", 4.0)
             return 77
 
         steps: list[tuple[str, list[str]]] = [
-            ("Kodi", sudo_script_command(KODI_SCRIPT, "--update")),
             ("RetroArch", sudo_script_command(RETROARCH_SCRIPT, "--update")),
             ("Cores", sudo_script_command(CORES_SCRIPT, "--update")),
-            ("CRT Timings", sudo_script_command(TIMINGS_SCRIPT, "--update")),
-            ("CRT verification", ["env", *_runtime_env_args(), "bash", str(CRT_GUARD_SCRIPT), "--strict"]),
         ]
 
         failed_count = self.run_commands_with_progress(steps, UPDATE_ALL_LOG)
@@ -471,7 +459,7 @@ class MenuApp:
                 try:
                     rc = self.run_command_with_progress(
                         command,
-                        title="UPDATE EVERYTHING",
+                        title="UPDATE ALL RETROARCH",
                         status=f"Step {index + 1}/{len(steps)}: {name}",
                         step_index=index,
                         step_total=len(steps),
@@ -804,13 +792,9 @@ class MenuApp:
 
 def main() -> int:
     if "--dump-status" in sys.argv:
-        kodi = run_status(KODI_SCRIPT)
         retroarch = run_status(RETROARCH_SCRIPT)
         cores = run_status(CORES_SCRIPT)
         timings = run_status(TIMINGS_SCRIPT)
-        print(f"KODI_INSTALLED={kodi.installed}")
-        print(f"KODI_AVAILABLE={kodi.available}")
-        print(f"KODI_UPDATE={'YES' if kodi.update_available else 'NO'}")
         print(f"RETROARCH_INSTALLED={retroarch.installed}")
         print(f"RETROARCH_AVAILABLE={retroarch.available}")
         print(f"RETROARCH_UPDATE={'YES' if retroarch.update_available else 'NO'}")
