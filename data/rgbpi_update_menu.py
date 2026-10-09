@@ -514,29 +514,32 @@ class MenuApp:
         last_cpu_ticks = process_tree_cpu_ticks(proc.pid)
         cpu_state = "starting"
         spinner = "|/-\\"
-        stream_eof = False
+
+        def consume_chunk(chunk: bytes) -> None:
+            nonlocal buffer, percent, detail, last_output_at
+            if not chunk:
+                return
+            last_output_at = time.monotonic()
+            text = chunk.decode("utf-8", errors="replace")
+            if log_handle is not None:
+                log_handle.write(text.replace("\r", "\n"))
+                log_handle.flush()
+            buffer += text.replace("\r", "\n")
+            while "\n" in buffer:
+                segment, buffer = buffer.split("\n", 1)
+                percent, detail = self.parse_progress_segment(segment, percent, detail)
 
         while True:
             self.pygame.event.pump()
             ready, _, _ = select.select([proc.stdout], [], [], 0.05)
             now = time.monotonic()
+
             if ready:
                 try:
                     chunk = os.read(fd, 4096)
                 except BlockingIOError:
-                    chunk = None
-                if chunk == b"":
-                    stream_eof = True
-                elif chunk:
-                    last_output_at = now
-                    text = chunk.decode("utf-8", errors="replace")
-                    if log_handle is not None:
-                        log_handle.write(text.replace("\r", "\n"))
-                        log_handle.flush()
-                    buffer += text.replace("\r", "\n")
-                    while "\n" in buffer:
-                        segment, buffer = buffer.split("\n", 1)
-                        percent, detail = self.parse_progress_segment(segment, percent, detail)
+                    chunk = b""
+                consume_chunk(chunk)
 
             if now - last_cpu_sample_at >= 1.0:
                 cpu_ticks = process_tree_cpu_ticks(proc.pid)
@@ -575,7 +578,17 @@ class MenuApp:
             )
             self.clock.tick(FPS)
 
-            if proc.poll() is not None and (stream_eof or not ready):
+            if proc.poll() is not None:
+                # Child completion is authoritative. Drain any final buffered
+                # stdout bytes without blocking, then advance to the next step.
+                while True:
+                    try:
+                        chunk = os.read(fd, 4096)
+                    except BlockingIOError:
+                        break
+                    if not chunk:
+                        break
+                    consume_chunk(chunk)
                 break
 
         if buffer.strip():
