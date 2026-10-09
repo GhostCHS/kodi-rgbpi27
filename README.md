@@ -1,8 +1,8 @@
 # RGB-Pi 27 Updater
 
-A maintained fork of `joeblack2k/kodi-rgbpi` for **RGB-Pi OS4 Final 27** on Raspberry Pi 4 / Pi 400.
+A focused **RetroArch and libretro core updater** for **RGB-Pi OS4 Final 27** on Raspberry Pi 4 / Pi 400, based on `joeblack2k/kodi-rgbpi`.
 
-The goal is to modernize selected user-space components without turning OS4 into a rolling Debian installation. RGB-Pi depends on a tightly coupled 15-kHz CRT/DPI stack, so kernel, firmware and base-distribution upgrades are intentionally outside this updater.
+The updater keeps the original RGB-Pi CRT environment intact while allowing validated RetroArch and core updates. **Kodi is not managed.** Kernel, firmware, base-distribution and automatic CRT timing upgrades are intentionally outside the one-button update path.
 
 ## Current policy
 
@@ -20,11 +20,11 @@ RetroArch 1.22.2 is available only as an experimental build until a real Raspber
 
 ## What this fork changes
 
-- targets `GhostCHS/kodi-rgbpi27` for runtime updates;
+- targets RGB-Pi OS4 Final 27 on Raspberry Pi 4 / Pi 400 (AArch64);
 - adds OS4 / Pi 4 / AArch64 preflight checks;
 - adds a software-side CRT compatibility guard;
 - keeps SHA-256 validation for downloadable payloads;
-- updates managed components directly without component backups or rollback copies;
+- keeps the one-button update limited to RetroArch and libretro cores;
 - validates RetroArch after installation and reports any CRT/runtime failure;
 - shows current task, percentage, elapsed time, last-output age and process-tree CPU activity during long updates;
 - follows the original RGB-Pi first-run privilege bootstrap so the updater can run non-interactively;
@@ -97,9 +97,9 @@ RetroArch
 Cores
 ```
 
-Kodi is not managed by this updater. CRT timings remain unchanged by UPDATE ALL RETROARCH; `./update.sh timings` is available separately. A manual CRT compatibility check is available with `./update.sh crt-check`.
+CRT timings remain unchanged by **UPDATE ALL RETROARCH** and are available only as a separate manual operation with `./update.sh timings`. A manual CRT compatibility check is available with `./update.sh crt-check`.
 
-Each component checks its installed version and becomes a no-op when already current. Downloads are SHA-256 checked, then installed directly. There is no automatic component backup or rollback stage. Each component gets one attempt: if a step exits with an error, it is logged as skipped and UPDATE EVERYTHING continues with the next component. Failed downloads are not retried. A step that does not finish within five minutes is terminated, logged as skipped, and the updater continues.
+Each component checks its installed version and becomes a no-op when already current. Downloads are SHA-256 checked before installation. If one part of UPDATE ALL RETROARCH fails, the failure is logged and the updater can continue safely instead of turning the operation into a full system upgrade.
 
 ## RetroArch update safety
 
@@ -111,7 +111,7 @@ The stable RetroArch updater replaces only:
 
 It does not intentionally replace RGB-Pi configuration, DynaRes configuration or `timings.dat`.
 
-After installation it validates the new binary and CRT/runtime prerequisites. A failed check stops the update and is reported; the updater does not restore an older binary automatically.
+After installation it validates the new binary and CRT/runtime prerequisites. A failed validation is reported rather than silently treating the update as successful.
 
 ## Progress display
 
@@ -134,11 +134,9 @@ Component installation needs root privileges. Updater27 follows the original RGB
 
 See [docs/ROOT-ACCESS.md](docs/ROOT-ACCESS.md).
 
-## RetroArch 1.22.2 experimental
+## RetroArch stable policy
 
-The reproducible ARM64/Bullseye experimental build is documented in [docs/RETROARCH-EXPERIMENTAL.md](docs/RETROARCH-EXPERIMENTAL.md).
-
-It is not in the stable manifest until physical CRT testing covers at least:
+New RetroArch builds are promoted to the stable manifest only after compatibility checks. Physical CRT validation should cover at least:
 
 - 240p NTSC around 59.94/60 Hz;
 - 288p PAL at 50 Hz;
@@ -149,7 +147,3 @@ It is not in the stable manifest until physical CRT testing covers at least:
 - game → RGB-Pi menu return.
 
 See [docs/RELEASE-POLICY.md](docs/RELEASE-POLICY.md).
-
-## RGBPi-Extra
-
-RGBPi-Extra is a separate project. It remains useful for additional systems, cores and tweaks. Avoid having two tools replace the same core bundle without a known rollback point.
