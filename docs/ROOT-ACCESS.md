@@ -1,10 +1,22 @@
-# Root access on RGB-Pi OS4 Final 27
+# Privileges on RGB-Pi OS4 Final 27
 
-Updater27 now follows the upstream RGB-Pi updater's first-run privilege setup for the stock `pi` account. A reboot is requested after that initial setup so future updater launches can run non-interactively.
+The inspected Final 27 card starts tty1 with a root autologin. The profile
+hook starts `/opt/rgbpi/autostart.sh`, which runs the RGB-Pi frontend.
+The frontend's Ports launcher executes `.sh` files using `os.system`, without
+dropping privileges. Updater27 uses this existing context directly.
+This is observed behavior, not a vendor guarantee for every modified image.
 
-## What works without root
+## Recommended path
 
-The following Updater27 actions are designed to work as the normal OS4 user:
+Install the updater files as `pi` with `bash install.sh`, run Scan Games,
+and launch the updater from Ports. No new account, sudoers rule or reboot is
+required. Do not run the installer while an update is in progress.
+
+The launcher accepts an already authorized passwordless `sudo env bash`
+context for terminal use, but does not grant it. Root processes execute scripts
+directly, so restricted root sudo policies cannot break Ports launches.
+
+## SSH diagnostics
 
 ```bash
 ./update.sh preflight
@@ -12,21 +24,21 @@ The following Updater27 actions are designed to work as the normal OS4 user:
 ./update.sh --dump-status
 ```
 
-These actions inspect the installation and verify CRT-related prerequisites without replacing emulator binaries, cores, timings, kernel or firmware.
+`pi` owns `/opt/retroarch/cores` on the inspected card, so Unix permissions
+permit core writes. The current updater still requires root for installation
+because it also uses system log paths and dependency installation. Directory
+ownership alone does not establish a rootless update implementation.
 
-## What still requires root
+## Removed bootstrap
 
-Actual installation actions remain privileged:
+Previous versions piped the default SSH password into `sudo env bash` and
+installed `pi ALL=(ALL) NOPASSWD:ALL`. A password cannot override command
+restrictions. That flow is removed; old bootstrap helpers now stop without
+writing anything. The legacy `root` command also stops. No existing sudoers
+file is deleted automatically. If an earlier version granted broad sudo,
+review that policy separately with your administrator.
 
-```bash
-./update.sh kodi --update
-./update.sh retroarch --update
-./update.sh cores --update
-./update.sh timings --update
-```
-
-For update execution, Updater27 uses the same first-run privilege model as the upstream RGB-Pi updater.
-
-## Account policy
-
-The stock `pi` account is kept in place. Updater27 does not create or migrate to a separate maintenance user.
+Do not authorize scripts stored in writable ROM directories via sudoers.
+A rule naming such a script grants whoever can replace it equivalent root
+execution. The Ports mechanism already trusts installed scripts; review the
+release before copying it onto the device.

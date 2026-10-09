@@ -11,8 +11,6 @@ UPDATE_BRANCH="${UPDATE_BRANCH:-main}"
 RAW_BASE="${RAW_BASE:-https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${UPDATE_BRANCH}}"
 ACTIVE_TTY="${ACTIVE_TTY:-$(cat /sys/class/tty/tty0/active 2>/dev/null | tr -d '[:space:]')}"
 ACTIVE_TTY="${ACTIVE_TTY:-tty1}"
-DEFAULT_PI_USER="${DEFAULT_PI_USER:-pi}"
-DEFAULT_PI_PASSWORD="${DEFAULT_PI_PASSWORD:-rgbpi}"
 
 RUNTIME_FILES=(
   common.sh
@@ -24,8 +22,6 @@ RUNTIME_FILES=(
   bootstrap_local_metadata.sh
   mount_all.sh
   rgbpi_update_menu.py
-  make_pi_root.sh
-  ensure_pi_sudo.sh
 )
 
 mkdir -p "$LOG_DIR"
@@ -65,40 +61,16 @@ sudo_env_args() {
     "SDL_NOMOUSE=$SDL_NOMOUSE"
 }
 
-show_reboot_required_message() {
-  clear >/dev/null 2>&1 || true
-  cat <<'EOF'
-RGB-PI 27 UPDATER
-
-First-run system setup is complete.
-
-Passwordless sudo for user pi was enabled automatically.
-Reboot RGB-Pi now.
-After reboot, launch the updater again and press UPDATE ALL RETROARCH.
-
-Press ENTER or wait 15 seconds.
-EOF
-  read -r -t 15 _ || true
-}
-
-show_sudo_bootstrap_failed_message() {
-  clear >/dev/null 2>&1 || true
+show_privilege_required_message() {
   cat <<EOF
 RGB-PI 27 UPDATER
 
-Automatic first-run sudo setup failed.
-
-The updater uses the original RGB-Pi method and expects the stock
-${DEFAULT_PI_USER} / ${DEFAULT_PI_PASSWORD} credentials on a clean OS4 image.
-
-If the updater was not launched from the RGB-Pi Ports menu, try it there.
-From a root-capable shell you can also run:
-
-  bash "${APP_DIR}/update.sh" root
-
-Press ENTER or wait 20 seconds.
+Launch this updater from RGB-Pi's Ports menu for installation actions.
+The OS4 frontend already runs Ports as root; no sudoers change is needed.
+SSH user pi can run preflight, crt-check and --dump-status.
+For terminal updates, use an administrator-authorized root shell.
+No password or privilege policy is changed by this updater.
 EOF
-  read -r -t 20 _ || true
 }
 
 runtime_complete() {
@@ -133,39 +105,12 @@ ensure_runtime() {
   bootstrap_runtime
 }
 
-ensure_passwordless_sudo_or_exit() {
-  local env_args=()
-  local current_user
-
-  if [[ "$EUID" -eq 0 ]]; then
-    return 0
-  fi
-
-  if sudo -n true >/dev/null 2>&1; then
-    return 0
-  fi
-
-  current_user="$(id -un 2>/dev/null || true)"
-  if [[ "$current_user" != "$DEFAULT_PI_USER" ]]; then
-    echo "Passwordless sudo missing for $current_user; automatic bootstrap is limited to ${DEFAULT_PI_USER}." >>"$LOG_FILE"
-    show_sudo_bootstrap_failed_message
-    exit 1
-  fi
-
-  echo "Passwordless sudo missing; attempting original RGB-Pi first-run bootstrap." >>"$LOG_FILE"
-  while IFS= read -r -d '' arg; do
-    env_args+=("$arg")
-  done < <(sudo_env_args)
-
-  if printf '%s\n' "$DEFAULT_PI_PASSWORD" | sudo -S -p '' /usr/bin/env "${env_args[@]}" bash "$DATA_DIR/make_pi_root.sh" >>"$LOG_FILE" 2>&1; then
-    echo "Automatic first-run sudo bootstrap completed; reboot required." >>"$LOG_FILE"
-    show_reboot_required_message
-    exit 0
-  fi
-
-  echo "Automatic first-run sudo bootstrap failed." >>"$LOG_FILE"
-  show_sudo_bootstrap_failed_message
-  exit 1
+require_update_privileges() {
+  [[ "$EUID" -eq 0 ]] && return 0
+  # Probe the actual command class used below, not unrelated `sudo true`.
+  sudo -n /usr/bin/env bash -c 'test "$EUID" -eq 0' >/dev/null 2>&1 && return 0
+  show_privilege_required_message
+  exit 77
 }
 
 sudo_exec_script() {
@@ -173,20 +118,23 @@ sudo_exec_script() {
   shift || true
   ensure_runtime
   export_runtime_env
-  ensure_passwordless_sudo_or_exit
+  require_update_privileges
 
   local env_args=()
   while IFS= read -r -d '' arg; do
     env_args+=("$arg")
   done < <(sudo_env_args)
 
-  exec sudo /usr/bin/env "${env_args[@]}" bash "$script" "$@"
+  if [[ "$EUID" -eq 0 ]]; then
+    exec /usr/bin/env "${env_args[@]}" bash "$script" "$@"
+  fi
+  exec sudo -n /usr/bin/env "${env_args[@]}" bash "$script" "$@"
 }
 
 launch_menu() {
   ensure_runtime
   export_runtime_env
-  ensure_passwordless_sudo_or_exit
+  require_update_privileges
 
   CURRENT_TTY="$(readlink -f /proc/self/fd/0 2>/dev/null || true)"
   if [[ "$EUID" -ne 0 || "$CURRENT_TTY" != "/dev/${ACTIVE_TTY}" ]]; then
@@ -195,7 +143,9 @@ launch_menu() {
       env_args+=("$arg")
     done < <(sudo_env_args)
 
-    exec sudo /usr/bin/env \
+    local privilege_prefix=()
+    [[ "$EUID" -eq 0 ]] || privilege_prefix=(sudo -n)
+    exec "${privilege_prefix[@]}" /usr/bin/env \
       ACTIVE_TTY="$ACTIVE_TTY" \
       "${env_args[@]}" \
       bash -lc 'exec </dev/"$ACTIVE_TTY" >/dev/"$ACTIVE_TTY" 2>&1; exec "$0" __menu_internal "$@"' \
@@ -242,12 +192,8 @@ case "${1:-}" in
     sudo_exec_script "$DATA_DIR/update_timings.sh" "${1:---update}"
     ;;
   root|make-root|pi-root)
-    ensure_runtime
-    export_runtime_env
-    if [[ "$EUID" -eq 0 ]]; then
-      exec bash "$DATA_DIR/make_pi_root.sh"
-    fi
-    sudo_exec_script "$DATA_DIR/make_pi_root.sh"
+    echo "Automatic sudoers changes have been removed. Launch from RGB-Pi Ports."
+    exit 77
     ;;
   bootstrap)
     shift
@@ -269,7 +215,6 @@ Usage:
   ./update.sh retroarch [--status|--update]
   ./update.sh cores [--status|--update]
   ./update.sh timings [--status|--update]
-  ./update.sh root                  Enable passwordless sudo for pi
   ./update.sh bootstrap             Seed local version markers
   ./update.sh mount [args...]       Run NAS mount helper
   ./update.sh --dump-status         Print updater status summary
