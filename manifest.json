@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "channel": "stable",
-  "updated_at": "2026-10-09T20:00:00Z",
+  "updated_at": "2026-10-09T17:35:00Z",
   "project": {
     "name": "RGB-Pi 27 Updater",
     "repository": "GhostCHS/kodi-rgbpi27"
