@@ -18,7 +18,6 @@ RUNTIME_FILES=(
   common.sh
   preflight.sh
   crt_guard.sh
-  update_kodi.sh
   update_retroarch.sh
   update_cores.sh
   update_timings.sh
@@ -32,7 +31,7 @@ RUNTIME_FILES=(
 mkdir -p "$LOG_DIR"
 
 bundled_mode_ready() {
-  [[ -f "$DATA_DIR/manifest.json" && -f "$DATA_DIR/kodi.deb" && -f "$DATA_DIR/kodi-omega-peripheral-joystick.tar.gz" ]]
+  [[ -f "$DATA_DIR/manifest.json" && -f "$DATA_DIR/retroarch-rgbpi.tar.gz" && -f "$DATA_DIR/cores.tar.gz" ]]
 }
 
 export_runtime_env() {
@@ -75,7 +74,7 @@ First-run system setup is complete.
 
 Passwordless sudo for user pi was enabled automatically.
 Reboot RGB-Pi now.
-After reboot, launch the updater again and press UPDATE EVERYTHING.
+After reboot, launch the updater again and press UPDATE ALL RETROARCH.
 
 Press ENTER or wait 15 seconds.
 EOF
@@ -230,10 +229,6 @@ case "${1:-}" in
     export_runtime_env
     exec bash "$DATA_DIR/crt_guard.sh" --status
     ;;
-  kodi)
-    shift
-    sudo_exec_script "$DATA_DIR/update_kodi.sh" "${1:---update}"
-    ;;
   retroarch)
     shift
     sudo_exec_script "$DATA_DIR/update_retroarch.sh" "${1:---update}"
@@ -271,7 +266,6 @@ Usage:
   ./update.sh                       Launch RGB-Pi 27 updater menu
   ./update.sh preflight             Check OS4 / Pi / architecture compatibility
   ./update.sh crt-check             Check software-side CRT compatibility
-  ./update.sh kodi [--status|--update]
   ./update.sh retroarch [--status|--update]
   ./update.sh cores [--status|--update]
   ./update.sh timings [--status|--update]
