@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import importlib.util
 import signal
+import sys
 
 repo = Path(__file__).resolve().parents[1]
 
@@ -124,6 +125,7 @@ spec = importlib.util.spec_from_file_location(
 )
 menu = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
+sys.modules[spec.name] = menu
 spec.loader.exec_module(menu)
 
 app = object.__new__(menu.MenuApp)
