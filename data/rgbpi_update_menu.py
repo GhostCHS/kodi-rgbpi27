@@ -189,7 +189,7 @@ def root_access_ready() -> bool:
         return True
     try:
         return subprocess.run(
-            ["sudo", "-n", "true"],
+            ["sudo", "-n", "/usr/bin/env", "bash", "-c", 'test "$EUID" -eq 0'],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=2,
