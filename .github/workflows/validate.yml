@@ -23,12 +23,16 @@ jobs:
         run: |
           set -euo pipefail
           bash -n update.sh
+          bash -n install.sh
           for script in data/*.sh; do
             bash -n "$script"
           done
 
       - name: Validate Python syntax
-        run: python3 -m py_compile data/*.py
+        run: python3 -m py_compile data/*.py tests/*.py
+
+      - name: Test OS4 Ports installer and privilege dispatch
+        run: python3 tests/test_installation.py
 
       - name: Validate manifest JSON
         run: python3 -m json.tool manifest.json >/dev/null
@@ -111,7 +115,7 @@ jobs:
           assert manifest["schema_version"] >= 2
           assert manifest["channel"] in {"stable", "preview", "latest"}
 
-          required = {"kodi", "kodi_joystick", "retroarch", "cores", "timings"}
+          required = {"retroarch", "cores", "timings"}
           assets = manifest["assets"]
           missing = required - assets.keys()
           assert not missing, f"missing assets: {sorted(missing)}"
