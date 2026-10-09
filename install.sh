@@ -2,6 +2,17 @@
 # Run from an extracted release/checkout as pi. No system policy changes.
 set -euo pipefail
 SOURCE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+RUNTIME_FILES=(
+  common.sh
+  preflight.sh
+  crt_guard.sh
+  update_retroarch.sh
+  update_cores.sh
+  update_timings.sh
+  bootstrap_local_metadata.sh
+  mount_all.sh
+  rgbpi_update_menu.py
+)
 (( $# <= 1 )) || { echo 'Usage: bash install.sh [ports-directory]' >&2; exit 2; }
 if (( $# == 1 )); then
   PORTS="$1"
@@ -29,11 +40,15 @@ STAGE="$(mktemp -d "$STORAGE/.updater27-install.XXXXXX")"
 trap 'rm -rf -- "$STAGE"' EXIT
 mkdir -p "$STAGE/data"
 cp -- "$SOURCE/update.sh" "$STAGE/update.sh"
-cp -- "$SOURCE"/data/*.sh "$SOURCE"/data/*.py "$STAGE/data/"
+for file in "${RUNTIME_FILES[@]}"; do
+  cp -- "$SOURCE/data/$file" "$STAGE/data/$file"
+done
 cp -- "$SOURCE/manifest.json" "$STAGE/data/manifest.json"
 chmod 0755 "$STAGE/update.sh" "$STAGE"/data/*.sh
 [[ ! -L "$RUNTIME/data" ]] || { echo "Refusing symlink runtime data." >&2; exit 1; }
 mkdir -p -- "$RUNTIME/data"
+# Remove retired helpers from runtimes created by older Updater27 revisions.
+rm -f --   "$RUNTIME/data/update_kodi.sh"   "$RUNTIME/data/make_pi_root.sh"   "$RUNTIME/data/ensure_pi_sudo.sh"
 # Move an older in-Ports runtime outside scanned ROMs, keeping all old files.
 # Refuse unexpected directory contents rather than overwriting another port.
 if [[ -e "$TARGET" && ! -f "$TARGET/.updater27-port" ]]; then
@@ -68,8 +83,6 @@ if path.is_file():
     stale = b"/roms/ports/RGB-PI Updater27/data/"
     kept = [line for line in lines if stale not in line]
     if len(kept) != len(lines):
-        if not any(b"/roms/ports/RGB-PI Updater27/update.sh" in line for line in kept):
-            raise SystemExit("Refusing games.dat cleanup: updater launch entry is missing")
         if not backup.exists():
             with backup.open("xb") as out:
                 out.write(original)
