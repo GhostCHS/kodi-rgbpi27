@@ -113,7 +113,7 @@ assets = data.get("assets")
 if not isinstance(assets, dict):
     raise SystemExit("manifest has no assets object")
 
-required = ("kodi", "kodi_joystick", "retroarch", "cores", "timings")
+required = ("retroarch", "cores", "timings")
 allowed_hosts = {"github.com", "api.github.com", "raw.githubusercontent.com"}
 
 for key in required:
