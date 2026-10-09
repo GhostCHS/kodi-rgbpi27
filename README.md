@@ -27,7 +27,7 @@ RetroArch 1.22.2 is available only as an experimental build until a real Raspber
 - keeps the one-button update limited to RetroArch and libretro cores;
 - validates RetroArch after installation and reports any CRT/runtime failure;
 - shows current task, percentage, elapsed time, last-output age and process-tree CPU activity during long updates;
-- follows the original RGB-Pi first-run privilege bootstrap so the updater can run non-interactively;
+- uses the existing root context of the RGB-Pi Ports launcher; never changes sudoers;
 - does not run `apt full-upgrade`, `rpi-update`, kernel replacement or firmware replacement.
 
 ## Installation path
@@ -44,21 +44,50 @@ Stock RGB-Pi OS4 Final 27 can expose the ROM partition instead at the system-wid
 /media/sd/roms/ports/RGB-PI Updater27
 ```
 
-`/media/sd` is not tied to the login user; it is the OS4 storage mount. The updater itself is location-independent and resolves its runtime relative to `update.sh`.
+`/media/sd` is not tied to the login user; it is the OS4 storage mount. The updater itself is location-independent and resolves its runtime relative to `update.sh`. The installed Port is a wrapper; the runtime
+lives outside the scanned ROM tree at `<storage>/.rgbpi-updater27`.
 
-For a stock Final 27 system where `/roms` does not exist:
+Download and extract a reviewed release or this repository on your PC or Pi.
+From the extracted folder, run as the normal `pi` user:
 
 ```bash
-mkdir -p "/media/sd/roms/ports/RGB-PI Updater27"
-
-curl -fsSL \
-  "https://raw.githubusercontent.com/GhostCHS/kodi-rgbpi27/main/update.sh" \
-  -o "/media/sd/roms/ports/RGB-PI Updater27/update.sh"
-
-chmod +x "/media/sd/roms/ports/RGB-PI Updater27/update.sh"
+bash install.sh
 ```
 
-Then run **Scan Games** in RGB-Pi and open **Ports → RGB-PI Updater27**.
+The installer uses `/media/sd/roms/ports` (or `/roms/ports` when present).
+You can supply another existing ROM storage location:
+
+```bash
+bash install.sh /media/usb1/roms/ports
+```
+
+For a card mounted on a Linux PC, explicitly supply its ROM path, for example
+`bash install.sh /mnt/rgbpi-rootfs/media/sd/roms/ports`. The installer
+updates only the Updater27 files and removes stale `games.dat` entries that
+point at the old in-Ports helper scripts. It backs up the original
+`games.dat` under `.rgbpi-updater27/` before editing it. It never modifies
+sudoers, startup, kernel, firmware or CRT timings. Do not install while an
+updater is running. Run **Scan Games**, then open
+**Ports → RGB-PI Updater27 → update** (the exact label depends on folder view).
+
+Ports on the inspected Final 27 installation inherit root from the frontend.
+The updater uses that context directly, without granting SSH user `pi` general
+sudo access. If another image launches Ports unprivileged, installation actions
+stop with guidance; no automatic privilege escalation is attempted.
+
+To update the updater itself, extract the next reviewed release and run
+`bash install.sh` again. Logs and downloaded payloads in the new runtime remain in place; the
+runtime scripts and bundled manifest are replaced. Older installations with
+`data/` inside Ports are moved to `.rgbpi-updater27/legacy.*/port` as backups.
+Their old logs/assets are preserved there, rather than reused automatically. For emulator/core updates,
+use **UPDATE ALL RETROARCH** inside the menu. Existing complete runtimes are
+not automatically refreshed from `main` on each launch.
+
+## Hardware acceptance
+
+Installer/privilege changes are not considered release-ready until they pass the
+real Pi + 15-kHz CRT gate in [docs/HARDWARE-ACCEPTANCE.md](docs/HARDWARE-ACCEPTANCE.md).
+PR #18 remains unmerged until that checklist passes.
 
 ## CRT compatibility guard
 
@@ -130,7 +159,10 @@ This is intended to distinguish a Pi that is still computing from a process that
 
 ## Root access
 
-Component installation needs root privileges. Updater27 follows the original RGB-Pi updater behavior: on first normal launch it attempts to enable passwordless sudo for the stock `pi` account, asks for a reboot, and then runs future updater launches non-interactively with root privileges.
+RetroArch replacement needs root privileges. Launch from the RGB-Pi Ports
+menu, whose frontend already runs as root on the inspected OS4 Final 27 card.
+SSH diagnostics work as `pi`; terminal installation needs an independently
+authorized root shell. Updater27 never writes sudoers or embeds a password.
 
 See [docs/ROOT-ACCESS.md](docs/ROOT-ACCESS.md).
 

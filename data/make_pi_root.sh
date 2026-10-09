@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-TARGET="/etc/sudoers.d/010_pi-nopasswd"
-TMP="$(mktemp)"
-
-cat > "$TMP" <<'RULE'
-pi ALL=(ALL) NOPASSWD:ALL
-RULE
-
-install -m 0440 "$TMP" "$TARGET"
-visudo -cf "$TARGET"
-rm -f "$TMP"
-echo "Installed sudoers drop-in: $TARGET"
+# Compatibility stub for old installations; never change system policy.
+echo "Sudoers bootstrap removed. Launch Updater27 from RGB-Pi Ports."
+exit 77

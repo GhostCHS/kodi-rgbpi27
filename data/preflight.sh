@@ -34,8 +34,8 @@ CURRENT_USER="$(id -un 2>/dev/null || echo unknown)"
 SUDO_MODE="restricted-or-unavailable"
 if [[ "$EUID" -eq 0 ]]; then
   SUDO_MODE="root"
-elif sudo -n true >/dev/null 2>&1; then
-  SUDO_MODE="passwordless"
+elif sudo -n /usr/bin/env bash -c 'test "$EUID" -eq 0' >/dev/null 2>&1; then
+  SUDO_MODE="passwordless-env-bash"
 fi
 
 STATUS="SUPPORTED"
