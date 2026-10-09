@@ -83,6 +83,12 @@ Their old logs/assets are preserved there, rather than reused automatically. For
 use **UPDATE ALL RETROARCH** inside the menu. Existing complete runtimes are
 not automatically refreshed from `main` on each launch.
 
+## Hardware acceptance
+
+Installer/privilege changes are not considered release-ready until they pass the
+real Pi + 15-kHz CRT gate in [docs/HARDWARE-ACCEPTANCE.md](docs/HARDWARE-ACCEPTANCE.md).
+PR #18 remains unmerged until that checklist passes.
+
 ## CRT compatibility guard
 
 Run:
