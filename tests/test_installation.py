@@ -2,6 +2,8 @@ from pathlib import Path
 import os
 import subprocess
 import tempfile
+import importlib.util
+import signal
 
 repo = Path(__file__).resolve().parents[1]
 
@@ -112,3 +114,48 @@ for script in [repo / "update.sh", repo / "install.sh", *(repo / "data").glob("*
     subprocess.run(["bash", "-n", str(script)], check=True)
 
 print("PASS: all shell scripts parse.")
+
+
+# Regression test: a completed child keeps its stdout pipe readable at EOF.
+# The progress loop must detect b"" and return instead of spinning forever.
+spec = importlib.util.spec_from_file_location(
+    "rgbpi_update_menu",
+    repo / "data" / "rgbpi_update_menu.py",
+)
+menu = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(menu)
+
+app = object.__new__(menu.MenuApp)
+class _Event:
+    @staticmethod
+    def pump():
+        pass
+class _Pygame:
+    event = _Event()
+app.pygame = _Pygame()
+class _Clock:
+    @staticmethod
+    def tick(_fps):
+        pass
+app.clock = _Clock()
+app.draw_progress = lambda *args, **kwargs: None
+
+def _alarm(_signum, _frame):
+    raise TimeoutError("progress loop failed to terminate at stdout EOF")
+
+old_handler = signal.signal(signal.SIGALRM, _alarm)
+signal.alarm(3)
+try:
+    rc = app.run_command_with_progress(
+        ["bash", "-lc", "printf '[100%%] [#] done\\n'"],
+        title="TEST",
+        status="EOF regression",
+        step_index=0,
+        step_total=1,
+    )
+finally:
+    signal.alarm(0)
+    signal.signal(signal.SIGALRM, old_handler)
+assert rc == 0
+print("PASS: progress loop terminates on child stdout EOF.")
