@@ -514,6 +514,7 @@ class MenuApp:
         last_cpu_ticks = process_tree_cpu_ticks(proc.pid)
         cpu_state = "starting"
         spinner = "|/-\\"
+        stream_eof = False
 
         while True:
             self.pygame.event.pump()
@@ -523,8 +524,10 @@ class MenuApp:
                 try:
                     chunk = os.read(fd, 4096)
                 except BlockingIOError:
-                    chunk = b""
-                if chunk:
+                    chunk = None
+                if chunk == b"":
+                    stream_eof = True
+                elif chunk:
                     last_output_at = now
                     text = chunk.decode("utf-8", errors="replace")
                     if log_handle is not None:
@@ -572,7 +575,7 @@ class MenuApp:
             )
             self.clock.tick(FPS)
 
-            if proc.poll() is not None and not ready:
+            if proc.poll() is not None and (stream_eof or not ready):
                 break
 
         if buffer.strip():
